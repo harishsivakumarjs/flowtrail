@@ -105,17 +105,26 @@ export async function fetchCalendarEvents(startDate, endDate) {
   }))
 }
 
-/** Create a Google Calendar event from a FlowTrail task */
-export async function createCalendarEvent({ title, dueDate, notes, priority }) {
+/** Create a Google Calendar event from a FlowTrail task or directly */
+export async function createCalendarEvent({ title, dueDate, notes, priority, startDateTime }) {
   const token = getStoredToken()
   if (!token) return null
 
-  const date  = dueDate || new Date().toISOString().split('T')[0]
+  const date = dueDate || new Date().toISOString().split('T')[0]
+
+  // If startDateTime provided, create timed event; otherwise all-day
+  const start = startDateTime
+    ? { dateTime: startDateTime, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }
+    : { date }
+  const end = startDateTime
+    ? { dateTime: new Date(new Date(startDateTime).getTime() + 3600000).toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }
+    : { date }
+
   const event = {
     summary:     title,
-    description: notes ? `${notes}\n\n[FlowTrail ${priority} priority task]` : `[FlowTrail ${priority} priority task]`,
-    start: { date },
-    end:   { date },
+    description: notes ? `${notes}\n\n[FlowTrail ${priority || 'medium'} priority]` : `[FlowTrail ${priority || 'medium'} priority]`,
+    start,
+    end,
     colorId: priority === 'high' ? '11' : priority === 'medium' ? '5' : '2',
   }
 

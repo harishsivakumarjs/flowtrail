@@ -17,10 +17,21 @@ export default function AppShell() {
     return () => window.removeEventListener('resize', h)
   }, [])
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts — only fire when NOT typing anywhere
   useEffect(() => {
     const handler = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      const t = e.target
+      // Block if any kind of editable element is focused
+      if (
+        t.tagName === 'INPUT' ||
+        t.tagName === 'TEXTAREA' ||
+        t.tagName === 'SELECT' ||
+        t.isContentEditable ||
+        t.contentEditable === 'true' ||
+        t.closest?.('[contenteditable]') ||
+        t.closest?.('.tiptap-editor') ||
+        t.closest?.('.ProseMirror')
+      ) return
       if (e.key === 'f' || e.key === 'F') navigate('/dashboard/focus')
     }
     window.addEventListener('keydown', handler)

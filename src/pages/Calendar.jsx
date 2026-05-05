@@ -401,6 +401,7 @@ export default function Calendar() {
   const [connected, setConnected]         = useState(false)
   const [loading, setLoading]             = useState(false)
   const [syncing, setSyncing]             = useState(false)
+  const [selectedDay, setSelectedDay]     = useState(null)
   const [showAdd, setShowAdd]             = useState(false)
   const [showImport, setShowImport]       = useState(false)
   const [addDate, setAddDate]             = useState(TODAY())
@@ -546,11 +547,87 @@ export default function Calendar() {
               habitTotal={habitCount}
               googleEvents={googleEvents}
               onItemClick={setSelectedItem}
-              onDayClick={(ds) => { setEditingItem(null); setAddDate(ds); setShowAdd(true) }}
+              onDayClick={(ds) => { setSelectedDay(ds === selectedDay ? null : ds) }}
             />
           ))}
         </div>
       </div>
+
+      {/* Selected day detail — shows on mobile */}
+      {selectedDay && (
+        <div className="mt-3 card p-4 animate-slide-up">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              {format(new Date(selectedDay + 'T00:00'), 'EEEE, MMMM d')}
+            </div>
+            <button
+              onClick={() => { setEditingItem(null); setAddDate(selectedDay); setShowAdd(true) }}
+              className="btn btn-primary text-xs px-3 py-1.5 gap-1">
+              <Plus size={12} /> Add
+            </button>
+          </div>
+
+          {/* Tasks for this day */}
+          {tasks.filter(t => t.due_date === selectedDay).length > 0 && (
+            <div className="mb-3">
+              <div className="text-xs font-medium mb-2 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Tasks</div>
+              <div className="space-y-1.5">
+                {tasks.filter(t => t.due_date === selectedDay).map(task => (
+                  <div key={task.id}
+                    onClick={() => setSelectedItem({ ...task, source: 'task' })}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer hover:bg-[var(--bg-overlay)]"
+                    style={{ border: '1px solid var(--border)' }}>
+                    <div className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ background: task.priority === 'high' ? 'var(--red)' : task.priority === 'medium' ? 'var(--amber)' : 'var(--green)' }} />
+                    <span className="text-sm flex-1" style={{
+                      color: 'var(--text-primary)',
+                      textDecoration: task.status === 'done' ? 'line-through' : 'none',
+                      opacity: task.status === 'done' ? 0.5 : 1
+                    }}>{task.title}</span>
+                    {task.due_time && (
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        {format(new Date(`${task.due_date}T${task.due_time}`), 'h:mm a')}
+                      </span>
+                    )}
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium badge-${task.priority}`}>
+                      {task.priority}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Google events for this day */}
+          {googleEvents.filter(e => e.start?.startsWith(selectedDay)).length > 0 && (
+            <div>
+              <div className="text-xs font-medium mb-2 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Google Calendar</div>
+              <div className="space-y-1.5">
+                {googleEvents.filter(e => e.start?.startsWith(selectedDay)).map(event => (
+                  <div key={event.id}
+                    onClick={() => setSelectedItem({ ...event, source: 'google' })}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer hover:opacity-90"
+                    style={{ background: event.color || '#4285F4' }}>
+                    <span className="text-sm font-medium text-white flex-1">{event.title}</span>
+                    {event.start?.includes('T') && (
+                      <span className="text-xs text-white/70">
+                        {format(new Date(event.start), 'h:mm a')}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {tasks.filter(t => t.due_date === selectedDay).length === 0 &&
+           googleEvents.filter(e => e.start?.startsWith(selectedDay)).length === 0 && (
+            <p className="text-sm text-center py-2" style={{ color: 'var(--text-muted)' }}>
+              Nothing scheduled — tap Add to create something
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-4 mt-3">
         <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>

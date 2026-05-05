@@ -1,44 +1,40 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '@/lib/db'
+import { db, uuid } from '@/lib/db'
 import { TODAY, fmt } from '@/lib/utils'
 import { syncToCloud } from '@/lib/sync'
-import { format, subDays } from 'date-fns'
+import { subDays } from 'date-fns'
 
 export function useHabits(userId) {
-  const habits = useLiveQuery(
+  return useLiveQuery(
     () => userId
       ? db.habits.where('user_id').equals(userId).filter(h => !h.archived).sortBy('sort_order')
       : Promise.resolve([]),
     [userId]
-  )
-  return habits ?? []
+  ) ?? []
 }
 
 export function useTodayLogs(userId) {
   const today = TODAY()
-  const logs = useLiveQuery(
+  return useLiveQuery(
     () => userId
       ? db.habit_logs.where('user_id').equals(userId).filter(l => l.log_date === today).toArray()
       : Promise.resolve([]),
     [userId, today]
-  )
-  return logs ?? []
+  ) ?? []
 }
 
 export function useHabitLogs(userId, month, year) {
   const start = `${year}-${String(month).padStart(2,'0')}-01`
   const end   = `${year}-${String(month).padStart(2,'0')}-31`
-  const logs = useLiveQuery(
+  return useLiveQuery(
     () => userId
       ? db.habit_logs.where('user_id').equals(userId)
           .filter(l => l.log_date >= start && l.log_date <= end).toArray()
       : Promise.resolve([]),
     [userId, month, year]
-  )
-  return logs ?? []
+  ) ?? []
 }
 
-/** Toggle habit for today — fixed compound index bug */
 export async function toggleHabitLog(habitId, userId) {
   const today    = TODAY()
   const existing = await db.habit_logs
@@ -52,7 +48,8 @@ export async function toggleHabitLog(habitId, userId) {
       updated_at: new Date().toISOString(),
     })
   } else {
-    await db.habit_logs.add({
+    await db.habit_logs.put({
+      id:         uuid(),
       habit_id:   habitId,
       user_id:    userId,
       log_date:   today,
@@ -60,7 +57,7 @@ export async function toggleHabitLog(habitId, userId) {
       updated_at: new Date().toISOString(),
     })
   }
-  syncToCloud(userId)
+  if (!userId?.startsWith('demo')) syncToCloud(userId)
 }
 
 export async function computeStreak(habitId) {
@@ -68,8 +65,7 @@ export async function computeStreak(habitId) {
     .where('habit_id').equals(habitId)
     .filter(l => l.completed).toArray()
   const doneDates = new Set(logs.map(l => l.log_date))
-  let streak = 0
-  let cursor = new Date()
+  let streak = 0, cursor = new Date()
   while (true) {
     const ds = fmt(cursor)
     if (doneDates.has(ds)) { streak++; cursor = subDays(cursor, 1) }
@@ -80,7 +76,8 @@ export async function computeStreak(habitId) {
 
 export async function addHabit({ name, icon, color, userId }) {
   const count = await db.habits.where('user_id').equals(userId).count()
-  await db.habits.add({
+  await db.habits.put({
+    id:          uuid(),
     user_id:     userId,
     name,
     icon:        icon || '●',
@@ -94,17 +91,17 @@ export async function addHabit({ name, icon, color, userId }) {
     created_at:  new Date().toISOString(),
     updated_at:  new Date().toISOString(),
   })
-  syncToCloud(userId)
+  if (!userId?.startsWith('demo')) syncToCloud(userId)
 }
 
 export async function updateHabit(id, fields) {
   const habit = await db.habits.get(id)
   await db.habits.update(id, { ...fields, updated_at: new Date().toISOString() })
-  if (habit) syncToCloud(habit.user_id)
+  if (habit && !habit.user_id?.startsWith('demo')) syncToCloud(habit.user_id)
 }
 
 export async function archiveHabit(id) {
   const habit = await db.habits.get(id)
   await db.habits.update(id, { archived: true, updated_at: new Date().toISOString() })
-  if (habit) syncToCloud(habit.user_id)
+  if (habit && !habit.user_id?.startsWith('demo')) syncToCloud(habit.user_id)
 }

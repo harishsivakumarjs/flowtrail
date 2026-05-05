@@ -1,12 +1,11 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '@/lib/db'
+import { db, uuid } from '@/lib/db'
 import { TODAY } from '@/lib/utils'
 import { syncToCloud } from '@/lib/sync'
-import { useAppStore } from '@/store/appStore'
 
 export function useTasks(userId, filter = 'today') {
   const today = TODAY()
-  const tasks = useLiveQuery(
+  return useLiveQuery(
     () => {
       if (!userId) return Promise.resolve([])
       return db.tasks.where('user_id').equals(userId).toArray().then(all => {
@@ -18,14 +17,12 @@ export function useTasks(userId, filter = 'today') {
       })
     },
     [userId, filter, today]
-  )
-  return tasks ?? []
+  ) ?? []
 }
 
-const getUser = () => useAppStore.getState().user
-
 export async function addTask({ title, priority, dueDate, notes, userId }) {
-  await db.tasks.add({
+  await db.tasks.put({
+    id:         uuid(),
     user_id:    userId,
     title,
     notes:      notes || '',
@@ -35,7 +32,7 @@ export async function addTask({ title, priority, dueDate, notes, userId }) {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   })
-  syncToCloud(userId)
+  if (!userId?.startsWith('demo')) syncToCloud(userId)
 }
 
 export async function toggleTask(id) {
@@ -46,17 +43,17 @@ export async function toggleTask(id) {
     completed_at: task.status === 'done' ? null : new Date().toISOString(),
     updated_at:   new Date().toISOString(),
   })
-  syncToCloud(task.user_id)
+  if (!task.user_id?.startsWith('demo')) syncToCloud(task.user_id)
 }
 
 export async function updateTask(id, fields) {
   const task = await db.tasks.get(id)
   await db.tasks.update(id, { ...fields, updated_at: new Date().toISOString() })
-  if (task) syncToCloud(task.user_id)
+  if (task && !task.user_id?.startsWith('demo')) syncToCloud(task.user_id)
 }
 
 export async function deleteTask(id) {
   const task = await db.tasks.get(id)
   await db.tasks.delete(id)
-  if (task) syncToCloud(task.user_id)
+  if (task && !task.user_id?.startsWith('demo')) syncToCloud(task.user_id)
 }

@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '@/lib/db'
+import { db, uuid } from '@/lib/db'
 import { TODAY } from '@/lib/utils'
 import { syncToCloud } from '@/lib/sync'
 
@@ -33,7 +33,8 @@ export async function saveJournalEntry({ userId, date, content, prompt }) {
       content, word_count: wordCount, updated_at: new Date().toISOString(),
     })
   } else {
-    await db.journal_entries.add({
+    await db.journal_entries.put({
+      id:         uuid(),
       user_id:    userId,
       entry_date: date,
       prompt,
@@ -44,7 +45,7 @@ export async function saveJournalEntry({ userId, date, content, prompt }) {
       updated_at: new Date().toISOString(),
     })
   }
-  syncToCloud(userId)
+  if (!userId?.startsWith('demo')) syncToCloud(userId)
 }
 
 export function useSleepLog(userId, date) {
@@ -71,9 +72,13 @@ export async function saveSleepLog({ userId, date, hours }) {
   if (existing) {
     await db.sleep_logs.update(existing.id, { hours, updated_at: new Date().toISOString() })
   } else {
-    await db.sleep_logs.add({
-      user_id: userId, log_date: date, hours, updated_at: new Date().toISOString(),
+    await db.sleep_logs.put({
+      id:      uuid(),
+      user_id: userId,
+      log_date: date,
+      hours,
+      updated_at: new Date().toISOString(),
     })
   }
-  syncToCloud(userId)
+  if (!userId?.startsWith('demo')) syncToCloud(userId)
 }

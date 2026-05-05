@@ -96,7 +96,12 @@ export default function Dashboard() {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      // Never fire shortcuts when typing in any input, textarea, or contenteditable
+      const tag = e.target.tagName
+      const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+        || e.target.contentEditable === 'true'
+        || e.target.closest('[contenteditable="true"]')
+      if (isEditable) return
       if (e.key === 'f' || e.key === 'F') navigate('/dashboard/focus')
       if (e.key === 'n' || e.key === 'N') setShowPlan(true)
     }

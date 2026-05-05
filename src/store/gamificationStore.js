@@ -74,6 +74,10 @@ export const useGamificationStore = create(
         if (newTotal === 50) get().earnBadge('tasks_50')
       },
 
+      recordJournalEntry: () => {
+        get().addXP(20, 'Journal entry written')
+      },
+
       recordSession: () => {
         const s = get()
         const newTotal = s.totalSessions + 1

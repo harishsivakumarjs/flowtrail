@@ -5,36 +5,36 @@ import { useAppStore } from '@/store/appStore'
 import { Zap } from 'lucide-react'
 
 export default function AuthCallback() {
-  const navigate   = useNavigate()
+  const navigate    = useNavigate()
   const { setUser } = useAppStore()
 
   useEffect(() => {
-    const handle = async () => {
-      // Exchange the code/token in the URL for a session
-      const { data, error } = await supabase.auth.getSession()
+    // Supabase puts the token in the URL hash — this call exchanges it for a session
+    supabase.auth.exchangeCodeForSession(window.location.search)
+      .catch(() => {})
 
-      if (data?.session?.user) {
-        setUser(data.session.user)
+    // Listen for the session to be established
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        setUser(session.user)
+        subscription.unsubscribe()
         navigate('/', { replace: true })
-        return
       }
+    })
 
-      // If no session yet, listen for it
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (session?.user) {
-          setUser(session.user)
-          subscription.unsubscribe()
-          navigate('/', { replace: true })
-        }
-      })
+    // Also try getting existing session immediately
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user)
+        navigate('/', { replace: true })
+      }
+    })
 
-      // Fallback — if nothing after 5s, go to login
-      setTimeout(() => {
-        navigate('/login', { replace: true })
-      }, 5000)
+    const fallback = setTimeout(() => navigate('/login', { replace: true }), 8000)
+    return () => {
+      clearTimeout(fallback)
+      subscription.unsubscribe()
     }
-
-    handle()
   }, [])
 
   return (

@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/lib/db'
 import { TODAY, fmt } from '@/lib/utils'
+import { syncToCloud } from '@/lib/sync'
 import { format, subDays } from 'date-fns'
 
 export function useHabits(userId) {
@@ -29,20 +30,17 @@ export function useHabitLogs(userId, month, year) {
   const end   = `${year}-${String(month).padStart(2,'0')}-31`
   const logs = useLiveQuery(
     () => userId
-      ? db.habit_logs
-          .where('user_id').equals(userId)
-          .filter(l => l.log_date >= start && l.log_date <= end)
-          .toArray()
+      ? db.habit_logs.where('user_id').equals(userId)
+          .filter(l => l.log_date >= start && l.log_date <= end).toArray()
       : Promise.resolve([]),
     [userId, month, year]
   )
   return logs ?? []
 }
 
-/** Toggle a habit log for today — fixed: uses simple filter, not compound index */
+/** Toggle habit for today — fixed compound index bug */
 export async function toggleHabitLog(habitId, userId) {
-  const today = TODAY()
-
+  const today    = TODAY()
   const existing = await db.habit_logs
     .where('habit_id').equals(habitId)
     .filter(l => l.log_date === today)
@@ -62,34 +60,27 @@ export async function toggleHabitLog(habitId, userId) {
       updated_at: new Date().toISOString(),
     })
   }
+  syncToCloud(userId)
 }
 
-/** Compute current streak for a habit */
 export async function computeStreak(habitId) {
   const logs = await db.habit_logs
     .where('habit_id').equals(habitId)
-    .filter(l => l.completed)
-    .toArray()
-
+    .filter(l => l.completed).toArray()
   const doneDates = new Set(logs.map(l => l.log_date))
   let streak = 0
   let cursor = new Date()
-
   while (true) {
-    const dateStr = fmt(cursor)
-    if (doneDates.has(dateStr)) {
-      streak++
-      cursor = subDays(cursor, 1)
-    } else break
+    const ds = fmt(cursor)
+    if (doneDates.has(ds)) { streak++; cursor = subDays(cursor, 1) }
+    else break
   }
-
   return streak
 }
 
-/** Add a new habit */
 export async function addHabit({ name, icon, color, userId }) {
   const count = await db.habits.where('user_id').equals(userId).count()
-  return db.habits.add({
+  await db.habits.add({
     user_id:     userId,
     name,
     icon:        icon || '●',
@@ -103,14 +94,17 @@ export async function addHabit({ name, icon, color, userId }) {
     created_at:  new Date().toISOString(),
     updated_at:  new Date().toISOString(),
   })
+  syncToCloud(userId)
 }
 
-/** Update a habit */
 export async function updateHabit(id, fields) {
-  return db.habits.update(id, { ...fields, updated_at: new Date().toISOString() })
+  const habit = await db.habits.get(id)
+  await db.habits.update(id, { ...fields, updated_at: new Date().toISOString() })
+  if (habit) syncToCloud(habit.user_id)
 }
 
-/** Archive (soft delete) a habit */
 export async function archiveHabit(id) {
-  return db.habits.update(id, { archived: true, updated_at: new Date().toISOString() })
+  const habit = await db.habits.get(id)
+  await db.habits.update(id, { archived: true, updated_at: new Date().toISOString() })
+  if (habit) syncToCloud(habit.user_id)
 }

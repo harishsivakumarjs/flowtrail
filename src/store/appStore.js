@@ -5,7 +5,7 @@ export const useAppStore = create(
   persist(
     (set, get) => ({
       // ── Theme ──────────────────────────────────
-      theme: 'dark',  // 'dark' | 'light'
+      theme: 'dark',
       toggleTheme: () => {
         const next = get().theme === 'dark' ? 'light' : 'dark'
         set({ theme: next })
@@ -18,7 +18,7 @@ export const useAppStore = create(
         document.documentElement.classList.toggle('light', t === 'light')
       },
 
-      // ── Auth ───────────────────────────────────
+      // ── Auth — persisted so demo + real user survive page reload ──
       user: null,
       setUser: (user) => set({ user }),
 
@@ -34,7 +34,8 @@ export const useAppStore = create(
     }),
     {
       name: 'flowtrail-app',
-      partialize: (s) => ({ theme: s.theme }),
+      // Now persists user AND theme
+      partialize: (s) => ({ theme: s.theme, user: s.user }),
     }
   )
 )

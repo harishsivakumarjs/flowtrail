@@ -48,7 +48,8 @@ export async function toggleHabitLog(habitId, userId) {
     markLocalWrite(existing.id)
     await db.habit_logs.put(updated)
     if (!userId?.startsWith('demo')) upsertToCloud('habit_logs', updated)
-    if (updated.completed) useGamificationStore.getState().recordHabitCheck(1)
+    // Award XP only when marking as done (not undoing)
+    if (updated.completed) useGamificationStore.getState().recordHabitDone()
   } else {
     const id  = uuid()
     const record = {
@@ -59,7 +60,8 @@ export async function toggleHabitLog(habitId, userId) {
     markLocalWrite(id)
     await db.habit_logs.put(record)
     if (!userId?.startsWith('demo')) upsertToCloud('habit_logs', record)
-    useGamificationStore.getState().recordHabitCheck(1)
+    // New log — always completed=true, award XP
+    useGamificationStore.getState().recordHabitDone()
   }
 }
 

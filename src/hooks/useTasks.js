@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, uuid } from '@/lib/db'
 import { TODAY } from '@/lib/utils'
-import { syncToCloud, deleteFromCloud, markLocalWrite } from '@/lib/sync'
+import { upsertToCloud, deleteFromCloud, markLocalWrite } from '@/lib/sync'
 
 export function useTasks(userId, filter = 'today') {
   const today = TODAY()
@@ -21,39 +21,43 @@ export function useTasks(userId, filter = 'today') {
 }
 
 export async function addTask({ title, priority, dueDate, notes, userId }) {
-  const id = uuid()
-  markLocalWrite(id)
-  await db.tasks.put({
-    id,
-    user_id:    userId,
-    title,
+  const id  = uuid()
+  const now = new Date().toISOString()
+  const record = {
+    id, user_id: userId, title,
     notes:      notes || '',
     priority:   priority || 'medium',
     status:     'pending',
     due_date:   dueDate || TODAY(),
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  })
-  if (!userId?.startsWith('demo')) syncToCloud(userId)
+    created_at: now,
+    updated_at: now,
+  }
+  markLocalWrite(id)
+  await db.tasks.put(record)
+  if (!userId?.startsWith('demo')) upsertToCloud('tasks', record)
 }
 
 export async function toggleTask(id) {
   const task = await db.tasks.get(id)
   if (!task) return
-  markLocalWrite(id)
-  await db.tasks.update(id, {
+  const updated = {
+    ...task,
     status:       task.status === 'done' ? 'pending' : 'done',
     completed_at: task.status === 'done' ? null : new Date().toISOString(),
     updated_at:   new Date().toISOString(),
-  })
-  if (!task.user_id?.startsWith('demo')) syncToCloud(task.user_id)
+  }
+  markLocalWrite(id)
+  await db.tasks.put(updated)
+  if (!task.user_id?.startsWith('demo')) upsertToCloud('tasks', updated)
 }
 
 export async function updateTask(id, fields) {
   const task = await db.tasks.get(id)
+  if (!task) return
+  const updated = { ...task, ...fields, updated_at: new Date().toISOString() }
   markLocalWrite(id)
-  await db.tasks.update(id, { ...fields, updated_at: new Date().toISOString() })
-  if (task && !task.user_id?.startsWith('demo')) syncToCloud(task.user_id)
+  await db.tasks.put(updated)
+  if (!task.user_id?.startsWith('demo')) upsertToCloud('tasks', updated)
 }
 
 export async function deleteTask(id) {

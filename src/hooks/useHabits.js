@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, uuid } from '@/lib/db'
 import { TODAY, fmt } from '@/lib/utils'
-import { syncToCloud, deleteFromCloud, markLocalWrite } from '@/lib/sync'
+import { upsertToCloud, deleteFromCloud, markLocalWrite } from '@/lib/sync'
 import { subDays } from 'date-fns'
 
 export function useHabits(userId) {
@@ -43,31 +43,26 @@ export async function toggleHabitLog(habitId, userId) {
     .first()
 
   if (existing) {
+    const updated = { ...existing, completed: !existing.completed, updated_at: new Date().toISOString() }
     markLocalWrite(existing.id)
-    await db.habit_logs.update(existing.id, {
-      completed:  !existing.completed,
-      updated_at: new Date().toISOString(),
-    })
-    if (!userId?.startsWith('demo')) syncToCloud(userId)
+    await db.habit_logs.put(updated)
+    if (!userId?.startsWith('demo')) upsertToCloud('habit_logs', updated)
   } else {
-    const id = uuid()
-    markLocalWrite(id)
-    await db.habit_logs.put({
-      id,
-      habit_id:   habitId,
-      user_id:    userId,
-      log_date:   today,
-      completed:  true,
+    const id  = uuid()
+    const record = {
+      id, habit_id: habitId, user_id: userId,
+      log_date: today, completed: true,
       updated_at: new Date().toISOString(),
-    })
-    if (!userId?.startsWith('demo')) syncToCloud(userId)
+    }
+    markLocalWrite(id)
+    await db.habit_logs.put(record)
+    if (!userId?.startsWith('demo')) upsertToCloud('habit_logs', record)
   }
 }
 
 export async function computeStreak(habitId) {
   const logs = await db.habit_logs
-    .where('habit_id').equals(habitId)
-    .filter(l => l.completed).toArray()
+    .where('habit_id').equals(habitId).filter(l => l.completed).toArray()
   const doneDates = new Set(logs.map(l => l.log_date))
   let streak = 0, cursor = new Date()
   while (true) {
@@ -80,12 +75,10 @@ export async function computeStreak(habitId) {
 
 export async function addHabit({ name, icon, color, userId }) {
   const count = await db.habits.where('user_id').equals(userId).count()
-  const id = uuid()
-  markLocalWrite(id)
-  await db.habits.put({
-    id,
-    user_id:     userId,
-    name,
+  const id    = uuid()
+  const now   = new Date().toISOString()
+  const record = {
+    id, user_id: userId, name,
     icon:        icon || '●',
     color:       color || '#5254e7',
     frequency:   'daily',
@@ -94,23 +87,27 @@ export async function addHabit({ name, icon, color, userId }) {
     goal_value:  30,
     sort_order:  count,
     archived:    false,
-    created_at:  new Date().toISOString(),
-    updated_at:  new Date().toISOString(),
-  })
-  if (!userId?.startsWith('demo')) syncToCloud(userId)
+    created_at:  now,
+    updated_at:  now,
+  }
+  markLocalWrite(id)
+  await db.habits.put(record)
+  if (!userId?.startsWith('demo')) upsertToCloud('habits', record)
 }
 
 export async function updateHabit(id, fields) {
   const habit = await db.habits.get(id)
+  if (!habit) return
+  const updated = { ...habit, ...fields, updated_at: new Date().toISOString() }
   markLocalWrite(id)
-  await db.habits.update(id, { ...fields, updated_at: new Date().toISOString() })
-  if (habit && !habit.user_id?.startsWith('demo')) syncToCloud(habit.user_id)
+  await db.habits.put(updated)
+  if (!habit.user_id?.startsWith('demo')) upsertToCloud('habits', updated)
 }
 
 export async function archiveHabit(id) {
   const habit = await db.habits.get(id)
-  markLocalWrite(id)
   if (!habit) return
+  markLocalWrite(id)
   if (!habit.user_id?.startsWith('demo')) {
     await deleteFromCloud('habits', id)
   } else {

@@ -142,31 +142,52 @@ export async function createCalendarEvent({ title, dueDate, notes, priority, sta
 }
 
 /** Delete a Google Calendar event */
-export async function deleteCalendarEvent(googleEventId) {
+export async function deleteCalendarEvent(eventId) {
   const token = getStoredToken()
-  if (!token || !googleEventId) return
-
-  await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${googleEventId}`,
+  if (!token || !eventId) return false
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`,
     { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
   )
+  return res.ok || res.status === 204
+}
+
+/** Update a Google Calendar event */
+export async function updateCalendarEvent(eventId, { title, date, time, notes }) {
+  const token = getStoredToken()
+  if (!token || !eventId) return null
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const startDateTime = time ? `${date}T${time}:00` : null
+  const body = {
+    summary:     title,
+    description: notes || '',
+    start: startDateTime ? { dateTime: startDateTime, timeZone: tz } : { date },
+    end:   startDateTime
+      ? { dateTime: new Date(new Date(startDateTime).getTime() + 3600000).toISOString(), timeZone: tz }
+      : { date },
+  }
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`,
+    {
+      method:  'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    }
+  )
+  return res.ok ? res.json() : null
 }
 
 /** Schedule browser notifications for upcoming events */
 export function scheduleEventNotifications(events) {
   if (Notification.permission !== 'granted') return
-
   events.forEach(event => {
     const start = new Date(event.start)
     const now   = new Date()
-    const diff  = start - now
-
-    // Notify 15 minutes before
-    const notifyAt = diff - 15 * 60 * 1000
+    const notifyAt = (start - now) - 15 * 60 * 1000
     if (notifyAt > 0 && notifyAt < 24 * 60 * 60 * 1000) {
       setTimeout(() => {
         new Notification(`📅 Starting in 15 min: ${event.title}`, {
-          body: event.location ? `📍 ${event.location}` : 'No location',
+          body: event.location ? `📍 ${event.location}` : 'Tap to open FlowTrail',
           icon: '/favicon.svg',
           tag:  `gcal-${event.id}`,
         })
@@ -176,8 +197,7 @@ export function scheduleEventNotifications(events) {
 }
 
 const GOOGLE_COLORS = {
-  '1': '#7986CB', '2': '#33B679', '3': '#8E24AA',
-  '4': '#E67C73', '5': '#F6BF26', '6': '#F4511E',
-  '7': '#039BE5', '8': '#616161', '9': '#3F51B5',
-  '10': '#0B8043', '11': '#D50000',
+  '1':'#7986CB','2':'#33B679','3':'#8E24AA','4':'#E67C73',
+  '5':'#F6BF26','6':'#F4511E','7':'#039BE5','8':'#616161',
+  '9':'#3F51B5','10':'#0B8043','11':'#D50000',
 }

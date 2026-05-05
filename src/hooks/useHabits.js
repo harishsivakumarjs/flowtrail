@@ -112,7 +112,7 @@ export async function archiveHabit(id) {
   markLocalWrite(id)
   if (!habit) return
   if (!habit.user_id?.startsWith('demo')) {
-    await deleteFromCloud('habits', id, habit.user_id)
+    await deleteFromCloud('habits', id)
   } else {
     await db.habits.delete(id)
   }

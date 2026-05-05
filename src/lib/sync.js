@@ -3,60 +3,58 @@ import { supabase } from './supabase'
 
 const TABLES = ['habits', 'habit_logs', 'sleep_logs', 'tasks', 'journal_entries']
 
+// Keep track of deleted IDs so syncFromCloud never restores them
+const deletedIds = new Set()
+
 /** Push local records to Supabase */
 export async function syncToCloud(userId) {
   if (!supabase || !navigator.onLine) return
-
   for (const table of TABLES) {
     try {
-      const records = await db[table]
-        .where('user_id').equals(userId)
-        .toArray()
+      const records = await db[table].where('user_id').equals(userId).toArray()
       if (!records.length) continue
       const { error } = await supabase
-        .from(table)
-        .upsert(records, { onConflict: 'id' })
+        .from(table).upsert(records, { onConflict: 'id' })
       if (error) console.error(`syncToCloud [${table}]:`, error)
     } catch (err) {
-      console.error(`syncToCloud failed [${table}]:`, err)
+      console.error(`syncToCloud [${table}]:`, err)
     }
   }
 }
 
-/** Delete a record from Supabase AND local */
-export async function deleteFromCloud(table, id, userId) {
-  // Delete locally first
-  await db[table].delete(id)
+/** Delete from BOTH Supabase and local — Supabase first */
+export async function deleteFromCloud(table, id) {
+  // Mark as deleted so syncFromCloud never restores it
+  deletedIds.add(id)
 
-  // Then delete from Supabase
-  if (!supabase || !navigator.onLine) return
-  const { error } = await supabase
-    .from(table)
-    .delete()
-    .eq('id', id)
-  if (error) console.error(`deleteFromCloud [${table}]:`, error)
+  // Delete from Supabase first
+  if (supabase && navigator.onLine) {
+    const { error } = await supabase.from(table).delete().eq('id', id)
+    if (error) console.error(`deleteFromCloud [${table}]:`, error)
+  }
+
+  // Then delete locally
+  await db[table].delete(id)
 }
 
-/** Pull latest from Supabase into local IndexedDB */
+/** Pull from Supabase — skip any IDs we've deleted */
 export async function syncFromCloud(userId) {
   if (!supabase || !navigator.onLine) return
-
   for (const table of TABLES) {
     try {
       const { data, error } = await supabase
-        .from(table)
-        .select('*')
-        .eq('user_id', userId)
+        .from(table).select('*').eq('user_id', userId)
       if (error) { console.error(`syncFromCloud [${table}]:`, error); continue }
       if (!data?.length) continue
-      await db[table].bulkPut(data)
+      // Filter out any records we've deleted locally
+      const filtered = data.filter(r => !deletedIds.has(r.id))
+      if (filtered.length) await db[table].bulkPut(filtered)
     } catch (err) {
-      console.error(`syncFromCloud failed [${table}]:`, err)
+      console.error(`syncFromCloud [${table}]:`, err)
     }
   }
 }
 
-/** Full sync both ways */
 export async function fullSync(userId) {
   await syncToCloud(userId)
   await syncFromCloud(userId)
@@ -77,36 +75,31 @@ export function subscribeRealtime(userId, onUpdate) {
     supabase
       .channel(`rt_${table}_${userId}`)
       .on('postgres_changes', {
-        event:  '*',
-        schema: 'public',
-        table,
+        event: '*', schema: 'public', table,
         filter: `user_id=eq.${userId}`,
       }, async (payload) => {
         try {
           const id = payload.new?.id || payload.old?.id
-
-          // Ignore echoes of our own writes
-          if (id && recentWrites.has(id)) {
-            console.log(`Realtime: ignoring own echo [${table}] ${id}`)
-            return
-          }
+          // Ignore our own writes
+          if (id && recentWrites.has(id)) return
+          // Ignore records we've deleted
+          if (id && deletedIds.has(id)) return
 
           if (payload.eventType === 'DELETE') {
-            if (payload.old?.id) await db[table].delete(payload.old.id)
+            if (payload.old?.id) {
+              deletedIds.add(payload.old.id)
+              await db[table].delete(payload.old.id)
+            }
           } else if (payload.new) {
             await db[table].put(payload.new)
           }
           onUpdate?.(table, payload.eventType)
         } catch (err) {
-          console.error(`realtime handler [${table}]:`, err)
+          console.error(`realtime [${table}]:`, err)
         }
       })
-      .subscribe((status) => {
-        console.log(`Realtime [${table}]: ${status}`)
-      })
+      .subscribe()
   )
 
-  return () => channels.forEach(ch => {
-    try { supabase.removeChannel(ch) } catch {}
-  })
+  return () => channels.forEach(ch => { try { supabase.removeChannel(ch) } catch {} })
 }

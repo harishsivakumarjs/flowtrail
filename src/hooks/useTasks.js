@@ -61,7 +61,7 @@ export async function deleteTask(id) {
   if (!task) return
   markLocalWrite(id)
   if (!task.user_id?.startsWith('demo')) {
-    await deleteFromCloud('tasks', id, task.user_id)
+    await deleteFromCloud('tasks', id)
   } else {
     await db.tasks.delete(id)
   }

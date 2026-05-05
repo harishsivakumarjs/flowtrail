@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, uuid } from '@/lib/db'
 import { TODAY } from '@/lib/utils'
-import { syncToCloud } from '@/lib/sync'
+import { syncToCloud, deleteFromCloud, markLocalWrite } from '@/lib/sync'
 
 export function useTasks(userId, filter = 'today') {
   const today = TODAY()
@@ -21,8 +21,10 @@ export function useTasks(userId, filter = 'today') {
 }
 
 export async function addTask({ title, priority, dueDate, notes, userId }) {
+  const id = uuid()
+  markLocalWrite(id)
   await db.tasks.put({
-    id:         uuid(),
+    id,
     user_id:    userId,
     title,
     notes:      notes || '',
@@ -38,6 +40,7 @@ export async function addTask({ title, priority, dueDate, notes, userId }) {
 export async function toggleTask(id) {
   const task = await db.tasks.get(id)
   if (!task) return
+  markLocalWrite(id)
   await db.tasks.update(id, {
     status:       task.status === 'done' ? 'pending' : 'done',
     completed_at: task.status === 'done' ? null : new Date().toISOString(),
@@ -48,12 +51,18 @@ export async function toggleTask(id) {
 
 export async function updateTask(id, fields) {
   const task = await db.tasks.get(id)
+  markLocalWrite(id)
   await db.tasks.update(id, { ...fields, updated_at: new Date().toISOString() })
   if (task && !task.user_id?.startsWith('demo')) syncToCloud(task.user_id)
 }
 
 export async function deleteTask(id) {
   const task = await db.tasks.get(id)
-  await db.tasks.delete(id)
-  if (task && !task.user_id?.startsWith('demo')) syncToCloud(task.user_id)
+  if (!task) return
+  markLocalWrite(id)
+  if (!task.user_id?.startsWith('demo')) {
+    await deleteFromCloud('tasks', id, task.user_id)
+  } else {
+    await db.tasks.delete(id)
+  }
 }

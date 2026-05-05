@@ -23,6 +23,20 @@ export async function syncToCloud(userId) {
   }
 }
 
+/** Delete a record from Supabase AND local */
+export async function deleteFromCloud(table, id, userId) {
+  // Delete locally first
+  await db[table].delete(id)
+
+  // Then delete from Supabase
+  if (!supabase || !navigator.onLine) return
+  const { error } = await supabase
+    .from(table)
+    .delete()
+    .eq('id', id)
+  if (error) console.error(`deleteFromCloud [${table}]:`, error)
+}
+
 /** Pull latest from Supabase into local IndexedDB */
 export async function syncFromCloud(userId) {
   if (!supabase || !navigator.onLine) return
@@ -48,7 +62,14 @@ export async function fullSync(userId) {
   await syncFromCloud(userId)
 }
 
-/** Real-time subscription — instantly syncs changes from other devices */
+// Track recent local writes to ignore own real-time echoes
+const recentWrites = new Set()
+export function markLocalWrite(id) {
+  recentWrites.add(id)
+  setTimeout(() => recentWrites.delete(id), 3000)
+}
+
+/** Real-time subscription */
 export function subscribeRealtime(userId, onUpdate) {
   if (!supabase) return () => {}
 
@@ -62,6 +83,14 @@ export function subscribeRealtime(userId, onUpdate) {
         filter: `user_id=eq.${userId}`,
       }, async (payload) => {
         try {
+          const id = payload.new?.id || payload.old?.id
+
+          // Ignore echoes of our own writes
+          if (id && recentWrites.has(id)) {
+            console.log(`Realtime: ignoring own echo [${table}] ${id}`)
+            return
+          }
+
           if (payload.eventType === 'DELETE') {
             if (payload.old?.id) await db[table].delete(payload.old.id)
           } else if (payload.new) {
@@ -73,7 +102,7 @@ export function subscribeRealtime(userId, onUpdate) {
         }
       })
       .subscribe((status) => {
-        console.log(`Realtime [${table}]:`, status)
+        console.log(`Realtime [${table}]: ${status}`)
       })
   )
 

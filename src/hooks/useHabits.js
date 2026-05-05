@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, uuid } from '@/lib/db'
 import { TODAY, fmt } from '@/lib/utils'
-import { syncToCloud } from '@/lib/sync'
+import { syncToCloud, deleteFromCloud, markLocalWrite } from '@/lib/sync'
 import { subDays } from 'date-fns'
 
 export function useHabits(userId) {
@@ -43,21 +43,25 @@ export async function toggleHabitLog(habitId, userId) {
     .first()
 
   if (existing) {
+    markLocalWrite(existing.id)
     await db.habit_logs.update(existing.id, {
       completed:  !existing.completed,
       updated_at: new Date().toISOString(),
     })
+    if (!userId?.startsWith('demo')) syncToCloud(userId)
   } else {
+    const id = uuid()
+    markLocalWrite(id)
     await db.habit_logs.put({
-      id:         uuid(),
+      id,
       habit_id:   habitId,
       user_id:    userId,
       log_date:   today,
       completed:  true,
       updated_at: new Date().toISOString(),
     })
+    if (!userId?.startsWith('demo')) syncToCloud(userId)
   }
-  if (!userId?.startsWith('demo')) syncToCloud(userId)
 }
 
 export async function computeStreak(habitId) {
@@ -76,8 +80,10 @@ export async function computeStreak(habitId) {
 
 export async function addHabit({ name, icon, color, userId }) {
   const count = await db.habits.where('user_id').equals(userId).count()
+  const id = uuid()
+  markLocalWrite(id)
   await db.habits.put({
-    id:          uuid(),
+    id,
     user_id:     userId,
     name,
     icon:        icon || '●',
@@ -96,12 +102,18 @@ export async function addHabit({ name, icon, color, userId }) {
 
 export async function updateHabit(id, fields) {
   const habit = await db.habits.get(id)
+  markLocalWrite(id)
   await db.habits.update(id, { ...fields, updated_at: new Date().toISOString() })
   if (habit && !habit.user_id?.startsWith('demo')) syncToCloud(habit.user_id)
 }
 
 export async function archiveHabit(id) {
   const habit = await db.habits.get(id)
-  await db.habits.update(id, { archived: true, updated_at: new Date().toISOString() })
-  if (habit && !habit.user_id?.startsWith('demo')) syncToCloud(habit.user_id)
+  markLocalWrite(id)
+  if (!habit) return
+  if (!habit.user_id?.startsWith('demo')) {
+    await deleteFromCloud('habits', id, habit.user_id)
+  } else {
+    await db.habits.delete(id)
+  }
 }

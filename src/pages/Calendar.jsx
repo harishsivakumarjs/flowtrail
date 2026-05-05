@@ -421,9 +421,11 @@ export default function Calendar() {
       const start  = startOfMonth(currentMonth)
       const end    = endOfMonth(currentMonth)
       const events = await fetchCalendarEvents(start, end)
-      setGoogleEvents(events)
+      // Filter out events created by FlowTrail (to avoid duplicates with task view)
+      const filtered = events.filter(e => !e.desc?.includes('[FlowTrail'))
+      setGoogleEvents(filtered)
       const todayStr  = format(new Date(), 'yyyy-MM-dd')
-      const todayEvts = events.filter(e => e.start?.startsWith(todayStr))
+      const todayEvts = filtered.filter(e => e.start?.startsWith(todayStr))
       scheduleEventNotifications(todayEvts)
     } catch { /* silent */ }
     setSyncing(false)

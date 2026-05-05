@@ -9,32 +9,35 @@ export default function AuthCallback() {
   const { setUser } = useAppStore()
 
   useEffect(() => {
-    // Supabase puts the token in the URL hash — this call exchanges it for a session
-    supabase.auth.exchangeCodeForSession(window.location.search)
-      .catch(() => {})
+    if (!supabase) { navigate('/login', { replace: true }); return }
 
-    // Listen for the session to be established
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    // For PKCE flow — exchange code for session
+    const params = new URLSearchParams(window.location.search)
+    const code   = params.get('code')
+
+    const finish = async () => {
+      if (code) {
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+        if (data?.session?.user) {
+          setUser(data.session.user)
+          navigate('/', { replace: true })
+          return
+        }
+      }
+
+      // Fallback — check existing session
+      const { data: { session } } = await supabase.auth.getSession()
       if (session?.user) {
         setUser(session.user)
-        subscription.unsubscribe()
         navigate('/', { replace: true })
+        return
       }
-    })
 
-    // Also try getting existing session immediately
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user)
-        navigate('/', { replace: true })
-      }
-    })
-
-    const fallback = setTimeout(() => navigate('/login', { replace: true }), 8000)
-    return () => {
-      clearTimeout(fallback)
-      subscription.unsubscribe()
+      // Nothing worked — back to login
+      navigate('/login', { replace: true })
     }
+
+    finish()
   }, [])
 
   return (

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/appStore'
 import { supabase } from '@/lib/supabase'
 import { fullSync, subscribeRealtime } from '@/lib/sync'
@@ -23,22 +23,37 @@ function ProtectedRoute({ children }) {
 
 export default function App() {
   const { user, setUser, applyTheme, setSyncing, setLastSync } = useAppStore()
+  const navigate = useNavigate()
 
   // Apply saved theme on mount
   useEffect(() => {
     applyTheme()
   }, [])
 
-  // Auth listener
+  // Auth listener — handles magic link callback
   useEffect(() => {
     if (!supabase) return
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) setUser(session.user)
-      else if (event === 'SIGNED_OUT') setUser(null)
-    })
+
+    // Handle the magic link token in the URL hash on load
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) setUser(session.user)
+      if (session?.user) {
+        setUser(session.user)
+        navigate('/', { replace: true })
+      }
     })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        setUser(session.user)
+        navigate('/', { replace: true })
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null)
+        navigate('/login', { replace: true })
+      } else if (session?.user) {
+        setUser(session.user)
+      }
+    })
+
     return () => subscription.unsubscribe()
   }, [])
 
@@ -73,14 +88,14 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index    element={<Dashboard />} />
-        <Route path="habits"    element={<Habits />} />
-        <Route path="tasks"     element={<Tasks />} />
-        <Route path="calendar"  element={<Calendar />} />
-        <Route path="journal"   element={<Journal />} />
-        <Route path="analytics" element={<Analytics />} />
-        <Route path="focus"     element={<Focus />} />
-        <Route path="settings"  element={<Settings />} />
+        <Route index               element={<Dashboard />} />
+        <Route path="habits"       element={<Habits />} />
+        <Route path="tasks"        element={<Tasks />} />
+        <Route path="calendar"     element={<Calendar />} />
+        <Route path="journal"      element={<Journal />} />
+        <Route path="analytics"    element={<Analytics />} />
+        <Route path="focus"        element={<Focus />} />
+        <Route path="settings"     element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -3,6 +3,8 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/appStore'
 import { supabase } from '@/lib/supabase'
 import { fullSync, syncFromCloud, subscribeRealtime } from '@/lib/sync'
+import { pushGamification, pullGamification } from '@/lib/gamificationSync'
+import { useGamificationStore } from '@/store/gamificationStore'
 
 import AppShell     from '@/components/layout/AppShell'
 import Landing      from '@/pages/Landing'
@@ -77,11 +79,20 @@ export default function App() {
     if (!user?.id || user?.demo || !supabase) return
     setSyncing(true)
     fullSync(user.id).then(() => { setSyncing(false); setLastSync() })
+    pullGamification(user.id)
     const unsub    = subscribeRealtime(user.id, () => setLastSync())
     const interval = setInterval(() => {
-      if (navigator.onLine) syncFromCloud(user.id).then(setLastSync)
+      if (navigator.onLine) {
+        syncFromCloud(user.id).then(setLastSync)
+        pushGamification(user.id)
+      }
     }, 15000)
-    return () => { unsub(); clearInterval(interval) }
+    // Push gamification when XP changes
+    const unsubGami = useGamificationStore.subscribe(
+      s => s.xp,
+      () => pushGamification(user.id)
+    )
+    return () => { unsub(); clearInterval(interval); unsubGami() }
   }, [user?.id])
 
   return (

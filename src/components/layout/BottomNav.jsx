@@ -1,25 +1,24 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Zap, CheckSquare, BookOpen, Trophy } from 'lucide-react'
+import { LayoutDashboard, Zap, CheckSquare, BookOpen, BarChart2 } from 'lucide-react'
 
 const TABS = [
-  { to: '/',         icon: LayoutDashboard, label: 'Home'    },
-  { to: '/habits',   icon: Zap,             label: 'Habits'  },
-  { to: '/tasks',    icon: CheckSquare,     label: 'Tasks'   },
-  { to: '/journal',  icon: BookOpen,        label: 'Journal' },
-  { to: '/progress', icon: Trophy,          label: 'Progress'},
+  { to: '/dashboard',           icon: LayoutDashboard, label: 'Home',    end: true },
+  { to: '/dashboard/habits',    icon: Zap,             label: 'Habits',  end: false },
+  { to: '/dashboard/tasks',     icon: CheckSquare,     label: 'Tasks',   end: false },
+  { to: '/dashboard/journal',   icon: BookOpen,        label: 'Journal', end: false },
+  { to: '/dashboard/analytics', icon: BarChart2,       label: 'More',    end: false },
 ]
 
 export default function BottomNav() {
   return (
-    <nav className="bottom-nav-safe flex border-t"
+    <nav className="bottom-nav-safe flex border-t flex-shrink-0"
       style={{ background: 'var(--sidebar-bg)', borderColor: 'var(--border)' }}>
-      {TABS.map(({ to, icon: Icon, label }) => (
-        <NavLink key={to} to={to} end={to === '/'}
+      {TABS.map(({ to, icon: Icon, label, end }) => (
+        <NavLink key={to} to={to} end={end}
           className={({ isActive }) =>
             `flex-1 flex flex-col items-center justify-center py-2.5 gap-1 text-xs transition-colors
              ${isActive ? 'text-[var(--brand)]' : 'text-[var(--text-muted)]'}`
-          }
-        >
+          }>
           {({ isActive }) => (
             <>
               <Icon size={20} strokeWidth={isActive ? 2.5 : 1.75} />

@@ -17,26 +17,7 @@ export default function AppShell() {
     return () => window.removeEventListener('resize', h)
   }, [])
 
-  // Keyboard shortcuts — only fire when NOT typing anywhere
-  useEffect(() => {
-    const handler = (e) => {
-      const t = e.target
-      // Block if any kind of editable element is focused
-      if (
-        t.tagName === 'INPUT' ||
-        t.tagName === 'TEXTAREA' ||
-        t.tagName === 'SELECT' ||
-        t.isContentEditable ||
-        t.contentEditable === 'true' ||
-        t.closest?.('[contenteditable]') ||
-        t.closest?.('.tiptap-editor') ||
-        t.closest?.('.ProseMirror')
-      ) return
-      if (e.key === 'f' || e.key === 'F') navigate('/dashboard/focus')
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [])
+
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg-base)' }}>

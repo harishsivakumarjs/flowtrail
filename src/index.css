@@ -1,0 +1,226 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens ─────────────────────────────────────── */
+:root {
+  --brand:       #5254e7;
+  --brand-light: #8a8cf2;
+  --brand-dim:   #eeeffe;
+
+  --green:  #22c55e;
+  --amber:  #f59e0b;
+  --red:    #ef4444;
+  --pink:   #ec4899;
+  --teal:   #14b8a6;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  --transition: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Light mode ────────────────────────────────────────── */
+:root, .light {
+  --bg-base:    #f8f8fa;
+  --bg-raised:  #ffffff;
+  --bg-overlay: #f0f0f4;
+  --bg-muted:   #e8e8ee;
+
+  --border:     #e2e2e8;
+  --border-mid: #d0d0da;
+
+  --text-primary:   #0f0f14;
+  --text-secondary: #52525e;
+  --text-muted:     #8b8b9a;
+
+  --sidebar-bg:   #ffffff;
+  --sidebar-item: #f4f4f8;
+}
+
+/* ── Dark mode ─────────────────────────────────────────── */
+.dark {
+  --bg-base:    #0f0f11;
+  --bg-raised:  #17171a;
+  --bg-overlay: #1f1f24;
+  --bg-muted:   #27272e;
+
+  --border:     #2a2a32;
+  --border-mid: #36363f;
+
+  --text-primary:   #f0f0f5;
+  --text-secondary: #9898aa;
+  --text-muted:     #55555f;
+
+  --sidebar-bg:   #111114;
+  --sidebar-item: #1f1f24;
+}
+
+/* ── Base ──────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { font-size: 16px; }
+
+body {
+  margin: 0;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--transition), color var(--transition);
+  overflow: hidden;
+}
+
+/* ── Scrollbars ────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-mid);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ── Utility classes ───────────────────────────────────── */
+.card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: border-color var(--transition);
+}
+
+.card-hover:hover {
+  border-color: var(--border-mid);
+}
+
+.input-base {
+  width: 100%;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 0.6rem 0.85rem;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.input-base:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 15%, transparent);
+}
+
+.input-base::placeholder { color: var(--text-muted); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: var(--brand);
+  color: #fff;
+}
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-primary:active { transform: scale(0.97); }
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+.btn-ghost:hover {
+  background: var(--bg-overlay);
+  color: var(--text-primary);
+}
+
+.btn-danger {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--red);
+}
+.btn-danger:hover { background: color-mix(in srgb, var(--red) 10%, transparent); }
+
+/* ── Tiptap editor ─────────────────────────────────────── */
+.tiptap-editor {
+  flex: 1;
+  overflow-y: auto;
+  color: var(--text-primary);
+  font-size: 1rem;
+  line-height: 1.75;
+  outline: none;
+  min-height: 200px;
+}
+
+.tiptap-editor p { margin: 0 0 0.75rem; }
+.tiptap-editor p:last-child { margin-bottom: 0; }
+
+.tiptap-editor .is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--text-muted);
+  pointer-events: none;
+  height: 0;
+}
+
+/* ── Habit grid cells ──────────────────────────────────── */
+.habit-cell {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-overlay);
+  transition: all 0.15s ease;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.habit-cell.done {
+  border-color: transparent;
+  background: var(--green);
+}
+.habit-cell.today {
+  border-color: var(--brand);
+}
+.habit-cell:hover { transform: scale(1.15); }
+
+/* ── Bottom nav (mobile) ───────────────────────────────── */
+.bottom-nav-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* ── Page transitions ──────────────────────────────────── */
+.page-enter {
+  animation: slideUp 0.22s ease-out;
+}
+
+/* ── Priority badges ───────────────────────────────────── */
+.badge-high   { background: color-mix(in srgb, var(--red) 15%, transparent);   color: var(--red);   }
+.badge-medium { background: color-mix(in srgb, var(--amber) 15%, transparent); color: var(--amber); }
+.badge-low    { background: color-mix(in srgb, var(--green) 15%, transparent); color: var(--green); }
+
+/* ── Streak flame ──────────────────────────────────────── */
+.streak-fire {
+  display: inline-block;
+  animation: pulseSoft 1.8s ease-in-out infinite;
+}
+
+/* ── Calendar heat cells ───────────────────────────────── */
+.heat-0 { background: var(--bg-muted); }
+.heat-1 { background: color-mix(in srgb, var(--green) 30%, var(--bg-muted)); }
+.heat-2 { background: color-mix(in srgb, var(--green) 55%, var(--bg-muted)); }
+.heat-3 { background: color-mix(in srgb, var(--green) 80%, var(--bg-muted)); }
+.heat-4 { background: var(--green); }

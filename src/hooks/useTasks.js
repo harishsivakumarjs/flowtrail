@@ -2,6 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db, uuid } from '@/lib/db'
 import { TODAY } from '@/lib/utils'
 import { upsertToCloud, deleteFromCloud, markLocalWrite } from '@/lib/sync'
+import { createCalendarEvent, isCalendarConnected } from '@/lib/googleCalendar'
+import { useGamificationStore } from '@/store/gamificationStore'
 
 export function useTasks(userId, filter = 'today') {
   const today = TODAY()
@@ -35,6 +37,11 @@ export async function addTask({ title, priority, dueDate, notes, userId }) {
   markLocalWrite(id)
   await db.tasks.put(record)
   if (!userId?.startsWith('demo')) upsertToCloud('tasks', record)
+  // Auto-create Google Calendar event if connected
+  if (isCalendarConnected()) {
+    createCalendarEvent({ title, priority: record.priority, dueDate: record.due_date, notes: record.notes })
+      .catch(err => console.warn('Google Calendar event creation failed:', err))
+  }
 }
 
 export async function toggleTask(id) {
@@ -49,6 +56,10 @@ export async function toggleTask(id) {
   markLocalWrite(id)
   await db.tasks.put(updated)
   if (!task.user_id?.startsWith('demo')) upsertToCloud('tasks', updated)
+  // Award XP when marking done
+  if (updated.status === 'done') {
+    useGamificationStore.getState().recordTaskComplete()
+  }
 }
 
 export async function updateTask(id, fields) {

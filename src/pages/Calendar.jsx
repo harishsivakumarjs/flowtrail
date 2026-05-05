@@ -1,25 +1,120 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval,
-         getDay, isSameMonth, isToday, addMonths, subMonths } from 'date-fns'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+         getDay, isToday, addMonths, subMonths, startOfDay, endOfDay } from 'date-fns'
+import { ChevronLeft, ChevronRight, Calendar as CalIcon, Plus,
+         RefreshCw, Unlink, ExternalLink, Bell } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/lib/db'
+import {
+  isCalendarConnected, connectGoogleCalendar, disconnectCalendar,
+  fetchCalendarEvents, scheduleEventNotifications, getStoredToken
+} from '@/lib/googleCalendar'
+import { requestNotificationPermission } from '@/lib/notifications'
+import Modal from '@/components/ui/Modal'
+import { addTask } from '@/hooks/useTasks'
 import { TODAY } from '@/lib/utils'
 
-function DayCell({ day, month, tasks, habitCount, habitTotal }) {
-  const isCurrentMonth = isSameMonth(day, month)
+// ── Google Connect Banner ────────────────────────────────────
+function GoogleCalendarBanner({ connected, onConnect, onDisconnect, loading }) {
+  if (connected) return (
+    <div className="flex items-center justify-between px-4 py-2.5 rounded-xl"
+      style={{ background: 'color-mix(in srgb, var(--green) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--green) 20%, transparent)' }}>
+      <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--green)' }}>
+        <CalIcon size={15} />
+        <span>Google Calendar connected</span>
+      </div>
+      <button onClick={onDisconnect} className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg hover:bg-[var(--bg-overlay)]"
+        style={{ color: 'var(--text-muted)' }}>
+        <Unlink size={12} /> Disconnect
+      </button>
+    </div>
+  )
+
+  return (
+    <div className="flex items-center justify-between px-4 py-2.5 rounded-xl"
+      style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+        <CalIcon size={15} />
+        <span>Connect Google Calendar to see your events</span>
+      </div>
+      <button onClick={onConnect} disabled={loading}
+        className="btn btn-primary text-xs px-3 py-1.5 gap-1">
+        {loading ? <RefreshCw size={12} className="animate-spin" /> : <ExternalLink size={12} />}
+        {loading ? 'Connecting…' : 'Connect'}
+      </button>
+    </div>
+  )
+}
+
+// ── Event detail modal ───────────────────────────────────────
+function EventModal({ event, open, onClose, userId }) {
+  const [adding, setAdding] = useState(false)
+  const [added,  setAdded]  = useState(false)
+
+  const addAsTask = async () => {
+    setAdding(true)
+    await addTask({
+      title:    event.title,
+      priority: 'medium',
+      dueDate:  event.start?.split('T')[0] || TODAY(),
+      notes:    event.desc || '',
+      userId,
+    })
+    setAdded(true)
+    setTimeout(onClose, 1500)
+    setAdding(false)
+  }
+
+  if (!event) return null
+  const startStr = event.start
+    ? format(new Date(event.start), event.allDay ? 'MMM d, yyyy' : 'MMM d, yyyy · h:mm a')
+    : ''
+
+  return (
+    <Modal open={open} onClose={onClose} title="Event details" size="sm">
+      <div className="space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="w-3 h-3 rounded-full mt-1.5 flex-shrink-0" style={{ background: event.color || '#4285F4' }} />
+          <div>
+            <h3 className="text-base font-medium" style={{ color: 'var(--text-primary)' }}>{event.title}</h3>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>{startStr}</p>
+          </div>
+        </div>
+
+        {event.location && (
+          <div className="text-sm px-3 py-2 rounded-lg" style={{ background: 'var(--bg-overlay)', color: 'var(--text-secondary)' }}>
+            📍 {event.location}
+          </div>
+        )}
+        {event.desc && (
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{event.desc}</p>
+        )}
+
+        {event.source === 'google' && (
+          <button onClick={addAsTask} disabled={adding || added}
+            className="btn btn-ghost w-full text-sm gap-2">
+            <Plus size={14} />
+            {added ? '✓ Added to tasks!' : adding ? 'Adding…' : 'Add as FlowTrail task'}
+          </button>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+// ── Day cell ─────────────────────────────────────────────────
+function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onEventClick }) {
+  const isCurrentMonth = day.getMonth() === month.getMonth()
   const isTodayDay     = isToday(day)
   const dateStr        = format(day, 'yyyy-MM-dd')
   const dayTasks       = tasks.filter(t => t.due_date === dateStr)
-  const completedTasks = dayTasks.filter(t => t.status === 'done').length
-  const rate = habitTotal > 0 ? habitCount / habitTotal : 0
+  const dayGEvents     = googleEvents.filter(e => e.start?.startsWith(dateStr))
 
   return (
-    <div className={`min-h-[80px] md:min-h-[100px] p-1.5 md:p-2 border-b border-r flex flex-col
+    <div className={`min-h-[80px] md:min-h-[100px] p-1.5 border-b border-r flex flex-col
       ${!isCurrentMonth ? 'opacity-30' : ''}
-      ${isTodayDay ? 'bg-[color-mix(in_srgb,var(--brand)_5%,transparent)]' : ''}
-      `}
+      ${isTodayDay ? 'bg-[color-mix(in_srgb,var(--brand)_5%,transparent)]' : ''}`}
       style={{ borderColor: 'var(--border)' }}>
 
       <div className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium mb-1 flex-shrink-0
@@ -28,143 +123,193 @@ function DayCell({ day, month, tasks, habitCount, habitTotal }) {
         {format(day, 'd')}
       </div>
 
-      {/* Habit progress dot */}
+      {/* Habit dots */}
       {isCurrentMonth && habitTotal > 0 && (
         <div className="flex gap-0.5 mb-1 flex-wrap">
           {Array.from({ length: Math.min(habitTotal, 6) }).map((_, i) => (
-            <div key={i}
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ background: i < habitCount ? 'var(--green)' : 'var(--border-mid)' }}
-            />
+            <div key={i} className="w-1.5 h-1.5 rounded-full"
+              style={{ background: i < habitCount ? 'var(--green)' : 'var(--border-mid)' }} />
           ))}
         </div>
       )}
 
-      {/* Task chips */}
-      <div className="flex flex-col gap-0.5 overflow-hidden">
-        {dayTasks.slice(0, 2).map(task => (
-          <div key={task.id}
-            className={`text-xs px-1.5 py-0.5 rounded truncate ${task.status === 'done' ? 'opacity-50 line-through' : ''}`}
-            style={{
-              background: task.priority === 'high'
-                ? 'color-mix(in srgb, var(--red) 15%, transparent)'
-                : task.priority === 'medium'
-                ? 'color-mix(in srgb, var(--amber) 15%, transparent)'
-                : 'color-mix(in srgb, var(--green) 15%, transparent)',
-              color: task.priority === 'high' ? 'var(--red)'
-                : task.priority === 'medium' ? 'var(--amber)'
-                : 'var(--green)',
-              fontSize: '10px',
-            }}>
-            {task.title}
-          </div>
-        ))}
-        {dayTasks.length > 2 && (
-          <div className="text-xs" style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
-            +{dayTasks.length - 2} more
-          </div>
-        )}
-      </div>
+      {/* FlowTrail tasks */}
+      {dayTasks.slice(0, 1).map(task => (
+        <div key={task.id}
+          className="text-xs px-1.5 py-0.5 rounded mb-0.5 truncate cursor-pointer"
+          style={{
+            background: task.priority === 'high'
+              ? 'color-mix(in srgb, var(--red) 15%, transparent)'
+              : 'color-mix(in srgb, var(--amber) 15%, transparent)',
+            color: task.priority === 'high' ? 'var(--red)' : 'var(--amber)',
+            fontSize: '10px',
+          }}>
+          {task.title}
+        </div>
+      ))}
+
+      {/* Google Calendar events */}
+      {dayGEvents.slice(0, 2).map(event => (
+        <div key={event.id}
+          onClick={() => onEventClick(event)}
+          className="text-xs px-1.5 py-0.5 rounded mb-0.5 truncate cursor-pointer hover:opacity-80 transition-opacity"
+          style={{ background: event.color || '#4285F4', color: '#fff', fontSize: '10px' }}>
+          📅 {event.title}
+        </div>
+      ))}
+
+      {/* Overflow count */}
+      {(dayTasks.length + dayGEvents.length) > 3 && (
+        <div className="text-xs" style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
+          +{dayTasks.length + dayGEvents.length - 3} more
+        </div>
+      )}
     </div>
   )
 }
 
+// ── Main Calendar page ───────────────────────────────────────
 export default function Calendar() {
-  const { user } = useAppStore()
-  const userId = user?.id
+  const { user }                        = useAppStore()
+  const userId                          = user?.id
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [googleEvents, setGoogleEvents] = useState([])
+  const [connected, setConnected]       = useState(false)
+  const [loading, setLoading]           = useState(false)
+  const [selectedEvent, setSelectedEvent] = useState(null)
+  const [syncing, setSyncing]           = useState(false)
 
+  // Check connection on mount
+  useEffect(() => {
+    setConnected(isCalendarConnected())
+  }, [])
+
+  // Fetch Google events when month changes or connected
+  const fetchEvents = useCallback(async () => {
+    if (!isCalendarConnected()) return
+    setSyncing(true)
+    try {
+      const start  = startOfMonth(currentMonth)
+      const end    = endOfMonth(currentMonth)
+      const events = await fetchCalendarEvents(start, end)
+      setGoogleEvents(events)
+      // Schedule notifications for today's events
+      const todayEvents = events.filter(e => e.start?.startsWith(format(new Date(), 'yyyy-MM-dd')))
+      scheduleEventNotifications(todayEvents)
+    } catch (err) {
+      console.error('Google Calendar fetch error:', err)
+    }
+    setSyncing(false)
+  }, [currentMonth, connected])
+
+  useEffect(() => { fetchEvents() }, [fetchEvents])
+
+  const handleConnect = async () => {
+    setLoading(true)
+    try {
+      await requestNotificationPermission()
+      await connectGoogleCalendar()
+      setConnected(true)
+      await fetchEvents()
+    } catch (err) {
+      console.error('Google Calendar connect error:', err)
+      alert('Could not connect Google Calendar. Make sure pop-ups are allowed.')
+    }
+    setLoading(false)
+  }
+
+  const handleDisconnect = () => {
+    disconnectCalendar()
+    setConnected(false)
+    setGoogleEvents([])
+  }
+
+  // Local data
   const monthStart = startOfMonth(currentMonth)
   const monthEnd   = endOfMonth(currentMonth)
   const days       = eachDayOfInterval({ start: monthStart, end: monthEnd })
-
-  // Pad start
-  const startPad = getDay(monthStart) // 0=Sun
-  const paddedStart = Array.from({ length: startPad })
+  const startPad   = getDay(monthStart)
 
   const tasks = useLiveQuery(
-    () => userId
-      ? db.tasks.where('user_id').equals(userId).toArray()
-      : Promise.resolve([]),
+    () => userId ? db.tasks.where('user_id').equals(userId).toArray() : Promise.resolve([]),
     [userId]
   ) ?? []
 
   const habitLogs = useLiveQuery(
-    () => userId
-      ? db.habit_logs.where('user_id').equals(userId).filter(l => l.completed).toArray()
-      : Promise.resolve([]),
+    () => userId ? db.habit_logs.where('user_id').equals(userId).filter(l => l.completed).toArray() : Promise.resolve([]),
     [userId]
   ) ?? []
 
   const habitCount = useLiveQuery(
-    () => userId
-      ? db.habits.where('user_id').equals(userId).filter(h => !h.archived).count()
-      : Promise.resolve(0),
+    () => userId ? db.habits.where('user_id').equals(userId).filter(h => !h.archived).count() : Promise.resolve(0),
     [userId]
   ) ?? 0
 
   const logsByDate = {}
-  habitLogs.forEach(l => {
-    logsByDate[l.log_date] = (logsByDate[l.log_date] || 0) + 1
-  })
+  habitLogs.forEach(l => { logsByDate[l.log_date] = (logsByDate[l.log_date] || 0) + 1 })
 
   const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-5">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Calendar</h1>
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            {format(currentMonth, 'MMMM yyyy')}
-          </p>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{format(currentMonth, 'MMMM yyyy')}</p>
         </div>
         <div className="flex items-center gap-2">
+          {connected && (
+            <button onClick={fetchEvents} disabled={syncing}
+              className="btn btn-ghost p-2" title="Sync Google Calendar">
+              <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} />
+            </button>
+          )}
           <button className="btn btn-ghost p-2" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>
             <ChevronLeft size={17} />
           </button>
-          <button
-            className="btn btn-ghost text-sm px-3"
-            onClick={() => setCurrentMonth(new Date())}
-          >
-            Today
-          </button>
+          <button className="btn btn-ghost text-sm px-3" onClick={() => setCurrentMonth(new Date())}>Today</button>
           <button className="btn btn-ghost p-2" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}>
             <ChevronRight size={17} />
           </button>
         </div>
       </div>
 
+      {/* Google Calendar banner */}
+      <div className="mb-4">
+        <GoogleCalendarBanner
+          connected={connected}
+          onConnect={handleConnect}
+          onDisconnect={handleDisconnect}
+          loading={loading}
+        />
+      </div>
+
+      {/* Calendar grid */}
       <div className="card overflow-hidden">
-        {/* Day labels */}
         <div className="grid grid-cols-7 border-b" style={{ borderColor: 'var(--border)' }}>
           {DAY_LABELS.map(d => (
             <div key={d} className="py-2 text-center text-xs font-medium"
-              style={{ color: 'var(--text-muted)' }}>
-              {d}
-            </div>
+              style={{ color: 'var(--text-muted)' }}>{d}</div>
           ))}
         </div>
-
-        {/* Grid */}
         <div className="grid grid-cols-7">
-          {paddedStart.map((_, i) => (
+          {Array.from({ length: startPad }).map((_, i) => (
             <div key={`pad-${i}`} className="min-h-[80px] md:min-h-[100px] border-b border-r"
               style={{ borderColor: 'var(--border)', opacity: 0.3 }} />
           ))}
-          {days.map(day => {
-            const ds = format(day, 'yyyy-MM-dd')
-            return (
-              <DayCell
-                key={ds}
-                day={day}
-                month={currentMonth}
-                tasks={tasks}
-                habitCount={logsByDate[ds] || 0}
-                habitTotal={habitCount}
-              />
-            )
-          })}
+          {days.map(day => (
+            <DayCell
+              key={format(day, 'yyyy-MM-dd')}
+              day={day}
+              month={currentMonth}
+              tasks={tasks}
+              habitCount={logsByDate[format(day, 'yyyy-MM-dd')] || 0}
+              habitTotal={habitCount}
+              googleEvents={googleEvents}
+              onEventClick={setSelectedEvent}
+            />
+          ))}
         </div>
       </div>
 
@@ -175,13 +320,27 @@ export default function Calendar() {
             <div className="w-1.5 h-1.5 rounded-full bg-[var(--green)]" />
             <div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--border-mid)' }} />
           </div>
-          Habits done / remaining
+          Habits done/remaining
         </div>
         <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
           <div className="w-3 h-3 rounded" style={{ background: 'color-mix(in srgb, var(--amber) 25%, transparent)' }} />
-          Task due
+          FlowTrail task
         </div>
+        {connected && (
+          <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+            <div className="w-3 h-3 rounded" style={{ background: '#4285F4' }} />
+            Google Calendar event
+          </div>
+        )}
       </div>
+
+      {/* Event detail modal */}
+      <EventModal
+        event={selectedEvent}
+        open={!!selectedEvent}
+        onClose={() => setSelectedEvent(null)}
+        userId={userId}
+      />
     </div>
   )
 }

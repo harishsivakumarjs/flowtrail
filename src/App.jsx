@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/appStore'
 import { supabase } from '@/lib/supabase'
@@ -18,6 +18,13 @@ import Focus        from '@/pages/Focus'
 
 function ProtectedRoute({ children }) {
   const { user } = useAppStore()
+  // Give Zustand 100ms to rehydrate persisted user from localStorage
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setReady(true), 100)
+    return () => clearTimeout(t)
+  }, [])
+  if (!ready) return null
   if (!user) return <Navigate to="/login" replace />
   return children
 }

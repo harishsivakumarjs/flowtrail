@@ -60,7 +60,7 @@ export default function Login() {
 
   const handleDemo = () => {
     setUser({ id: 'demo-user', email: 'demo@flowtrail.app', demo: true })
-    window.location.href = '/'
+    window.location.replace('/')
   }
 
   return (

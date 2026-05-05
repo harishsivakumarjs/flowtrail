@@ -2,18 +2,19 @@ import { useState, useEffect, useCallback } from 'react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval,
          getDay, isToday, addMonths, subMonths } from 'date-fns'
 import { ChevronLeft, ChevronRight, Calendar as CalIcon, Plus,
-         RefreshCw, Unlink, ExternalLink, Trash2, Edit2, Clock } from 'lucide-react'
+         RefreshCw, Unlink, ExternalLink, Trash2, Edit2,
+         Clock, Download, CheckCircle } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/lib/db'
 import {
   isCalendarConnected, connectGoogleCalendar, disconnectCalendar,
   fetchCalendarEvents, scheduleEventNotifications, createCalendarEvent,
-  deleteCalendarEvent, updateCalendarEvent
+  deleteCalendarEvent, updateCalendarEvent, getStoredToken
 } from '@/lib/googleCalendar'
 import { requestNotificationPermission } from '@/lib/notifications'
 import Modal from '@/components/ui/Modal'
-import { addTask, deleteTask, updateTask } from '@/hooks/useTasks'
+import { addTask, toggleTask, deleteTask, updateTask, scheduleTaskNotification } from '@/hooks/useTasks'
 import { TODAY } from '@/lib/utils'
 
 // ── Google Connect Banner ─────────────────────────────────────
@@ -46,7 +47,7 @@ function GoogleCalendarBanner({ connected, onConnect, onDisconnect, loading }) {
   )
 }
 
-// ── Add / Edit Event Modal ────────────────────────────────────
+// ── Add / Edit Modal ──────────────────────────────────────────
 function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefresh, editingEvent = null, editingTask = null }) {
   const isEditing = !!(editingEvent || editingTask)
   const [type, setType]         = useState('task')
@@ -58,7 +59,6 @@ function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefres
   const [saving, setSaving]     = useState(false)
   const [done, setDone]         = useState(false)
 
-  // Populate fields when editing
   useEffect(() => {
     if (!open) return
     if (editingEvent) {
@@ -71,29 +71,28 @@ function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefres
       setType('task')
       setTitle(editingTask.title || '')
       setDate(editingTask.due_date || TODAY())
+      setTime(editingTask.due_time || '')
       setPriority(editingTask.priority || 'medium')
       setNotes(editingTask.notes || '')
     } else {
-      setTitle(''); setDate(defaultDate || TODAY())
-      setTime(''); setPriority('medium'); setNotes('')
-      setDone(false); setType('task')
+      setTitle(''); setDate(defaultDate || TODAY()); setTime('')
+      setPriority('medium'); setNotes(''); setDone(false); setType('task')
     }
   }, [open, editingEvent, editingTask, defaultDate])
 
   const handleSave = async () => {
     if (!title.trim()) return
     setSaving(true)
-
     if (isEditing) {
       if (editingTask) {
-        await updateTask(editingTask.id, { title: title.trim(), priority, due_date: date, notes })
+        await updateTask(editingTask.id, { title: title.trim(), priority, due_date: date, due_time: time || null, notes })
       } else if (editingEvent) {
         await updateCalendarEvent(editingEvent.id, { title: title.trim(), date, time, notes })
         onRefresh?.()
       }
     } else {
       if (type === 'task') {
-        await addTask({ title: title.trim(), priority, dueDate: date, notes, userId })
+        await addTask({ title: title.trim(), priority, dueDate: date, dueTime: time || null, notes, userId })
       } else {
         if (!connected) { alert('Connect Google Calendar first'); setSaving(false); return }
         const startDateTime = time ? `${date}T${time}:00` : null
@@ -101,7 +100,6 @@ function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefres
         onRefresh?.()
       }
     }
-
     setDone(true)
     setTimeout(() => { onClose(); setDone(false) }, 1000)
     setSaving(false)
@@ -109,22 +107,17 @@ function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefres
 
   return (
     <Modal open={open} onClose={onClose}
-      title={isEditing ? `Edit ${editingEvent ? 'event' : 'task'}` : 'Add to calendar'}
-      size="sm">
+      title={isEditing ? `Edit ${editingEvent ? 'event' : 'task'}` : 'Add to calendar'} size="sm">
       <div className="space-y-4">
-        {/* Type toggle — only for new items */}
         {!isEditing && (
           <div className="flex p-1 rounded-xl gap-1" style={{ background: 'var(--bg-overlay)' }}>
-            <button onClick={() => setType('task')}
-              className="flex-1 py-2 rounded-lg text-sm font-medium transition-all"
-              style={{ background: type === 'task' ? 'var(--bg-raised)' : 'transparent', color: type === 'task' ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-              📋 FlowTrail Task
-            </button>
-            <button onClick={() => setType('event')}
-              className="flex-1 py-2 rounded-lg text-sm font-medium transition-all"
-              style={{ background: type === 'event' ? 'var(--bg-raised)' : 'transparent', color: type === 'event' ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-              📅 Google Event
-            </button>
+            {['task','event'].map(t => (
+              <button key={t} onClick={() => setType(t)}
+                className="flex-1 py-2 rounded-lg text-sm font-medium transition-all"
+                style={{ background: type === t ? 'var(--bg-raised)' : 'transparent', color: type === t ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                {t === 'task' ? '📋 FlowTrail Task' : '📅 Google Event'}
+              </button>
+            ))}
           </div>
         )}
 
@@ -137,27 +130,34 @@ function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefres
             <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>Date</label>
             <input type="date" className="input-base" value={date} onChange={e => setDate(e.target.value)} />
           </div>
-          {(type === 'event' || editingEvent) ? (
-            <div>
-              <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                Time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span>
-              </label>
-              <input type="time" className="input-base" value={time} onChange={e => setTime(e.target.value)} />
-            </div>
-          ) : (
-            <div>
-              <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>Priority</label>
-              <select className="input-base" value={priority} onChange={e => setPriority(e.target.value)}>
-                <option value="high">🔴 High</option>
-                <option value="medium">🟡 Medium</option>
-                <option value="low">🟢 Low</option>
-              </select>
-            </div>
-          )}
+          <div>
+            <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+              Time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span>
+            </label>
+            <input type="time" className="input-base" value={time} onChange={e => setTime(e.target.value)} />
+          </div>
         </div>
+
+        {(type === 'task' || editingTask) && (
+          <div>
+            <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>Priority</label>
+            <select className="input-base" value={priority} onChange={e => setPriority(e.target.value)}>
+              <option value="high">🔴 High</option>
+              <option value="medium">🟡 Medium</option>
+              <option value="low">🟢 Low</option>
+            </select>
+          </div>
+        )}
 
         <textarea className="input-base resize-none" rows={2}
           placeholder="Notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} />
+
+        {time && (type === 'task' || editingTask) && (
+          <div className="text-xs px-3 py-2 rounded-lg"
+            style={{ background: 'color-mix(in srgb, var(--brand) 8%, transparent)', color: 'var(--text-secondary)' }}>
+            🔔 You'll get a notification 30 minutes before this task
+          </div>
+        )}
 
         <div className="flex gap-2">
           <button className="btn btn-ghost flex-1" onClick={onClose}>Cancel</button>
@@ -171,37 +171,34 @@ function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefres
   )
 }
 
-// ── Event / Task Detail Modal ─────────────────────────────────
-function DetailModal({ item, open, onClose, userId, onEdit, onDelete }) {
+// ── Detail Modal ──────────────────────────────────────────────
+function DetailModal({ item, open, onClose, userId, onEdit, onDelete, onComplete }) {
   if (!item) return null
-
   const isGoogle = item.source === 'google'
   const isTask   = item.source === 'task'
 
-  // Format time display
   const formatTime = (dateStr) => {
     if (!dateStr) return null
-    if (dateStr.includes('T')) {
-      return format(new Date(dateStr), 'MMM d, yyyy · h:mm a')
-    }
+    if (dateStr.includes('T')) return format(new Date(dateStr), 'MMM d, yyyy · h:mm a')
     return format(new Date(dateStr + 'T00:00'), 'MMM d, yyyy') + ' · All day'
   }
 
   const timeStr = isGoogle
     ? formatTime(item.start)
     : item.due_date
-      ? format(new Date(item.due_date + 'T00:00'), 'MMM d, yyyy')
+      ? `${format(new Date(item.due_date + 'T00:00'), 'MMM d, yyyy')}${item.due_time ? ' · ' + format(new Date(`${item.due_date}T${item.due_time}`), 'h:mm a') : ''}`
       : null
 
   return (
     <Modal open={open} onClose={onClose} title={isGoogle ? 'Google event' : 'Task'} size="sm">
       <div className="space-y-4">
-        {/* Title & color dot */}
         <div className="flex items-start gap-3">
           <div className="w-3 h-3 rounded-full mt-1.5 flex-shrink-0"
             style={{ background: isGoogle ? (item.color || '#4285F4') : item.priority === 'high' ? 'var(--red)' : item.priority === 'medium' ? 'var(--amber)' : 'var(--green)' }} />
           <div className="flex-1">
-            <h3 className="text-base font-medium" style={{ color: 'var(--text-primary)' }}>{item.title}</h3>
+            <h3 className="text-base font-medium" style={{ color: 'var(--text-primary)', textDecoration: item.status === 'done' ? 'line-through' : 'none' }}>
+              {item.title}
+            </h3>
             {timeStr && (
               <div className="flex items-center gap-1 mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
                 <Clock size={13} />{timeStr}
@@ -215,23 +212,31 @@ function DetailModal({ item, open, onClose, userId, onEdit, onDelete }) {
           </div>
         </div>
 
-        {/* Location */}
         {item.location && (
           <div className="text-sm px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-overlay)', color: 'var(--text-secondary)' }}>
             📍 {item.location}
           </div>
         )}
-
-        {/* Notes / description */}
         {(item.desc || item.notes) && (
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            {item.desc || item.notes}
-          </p>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{item.desc || item.notes}</p>
         )}
 
-        {/* Actions */}
-        <div className="flex gap-2 pt-1">
+        <div className="flex gap-2 flex-wrap">
+          {isTask && item.status !== 'done' && (
+            <button onClick={() => onComplete(item)}
+              className="btn btn-primary flex-1 gap-1.5 text-sm">
+              <CheckCircle size={14} /> Mark complete
+            </button>
+          )}
+          {isGoogle && (
+            <button onClick={() => { addTask({ title: item.title, priority: 'medium', dueDate: item.start?.split('T')[0] || TODAY(), notes: item.desc || '', userId }); onClose() }}
+              className="btn btn-ghost flex-1 gap-1 text-sm">
+              <Download size={14} /> Import as task
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2">
           <button onClick={() => { onClose(); onEdit(item) }}
             className="btn btn-ghost flex-1 gap-1.5 text-sm">
             <Edit2 size={14} /> Edit
@@ -246,18 +251,84 @@ function DetailModal({ item, open, onClose, userId, onEdit, onDelete }) {
   )
 }
 
+// ── Import Modal ──────────────────────────────────────────────
+function ImportModal({ open, onClose, events, userId }) {
+  const [selected, setSelected] = useState([])
+  const [importing, setImporting] = useState(false)
+  const [done, setDone] = useState(false)
+
+  useEffect(() => {
+    if (open) { setSelected(events.map(e => e.id)); setDone(false) }
+  }, [open, events])
+
+  const toggle = (id) => setSelected(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
+
+  const handleImport = async () => {
+    setImporting(true)
+    const toImport = events.filter(e => selected.includes(e.id))
+    for (const event of toImport) {
+      await addTask({
+        title:    event.title,
+        priority: 'medium',
+        dueDate:  event.start?.split('T')[0] || TODAY(),
+        dueTime:  event.start?.includes('T') ? event.start.split('T')[1]?.slice(0,5) : null,
+        notes:    event.desc || '',
+        userId,
+      })
+    }
+    setDone(true)
+    setTimeout(() => { onClose(); setDone(false) }, 1200)
+    setImporting(false)
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Import Google events as tasks" size="md">
+      <div className="space-y-3">
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          Select events to import as FlowTrail tasks:
+        </p>
+        <div className="space-y-2 max-h-64 overflow-y-auto">
+          {events.length === 0 && (
+            <p className="text-sm text-center py-4" style={{ color: 'var(--text-muted)' }}>No events this month</p>
+          )}
+          {events.map(event => (
+            <div key={event.id}
+              onClick={() => toggle(event.id)}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer hover:bg-[var(--bg-overlay)] transition-colors"
+              style={{ border: `1px solid ${selected.includes(event.id) ? 'var(--brand)' : 'var(--border)'}` }}>
+              <div className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0"
+                style={{ borderColor: selected.includes(event.id) ? 'var(--brand)' : 'var(--border)', background: selected.includes(event.id) ? 'var(--brand)' : 'transparent' }}>
+                {selected.includes(event.id) && <svg width="8" height="6" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{event.title}</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {event.start ? format(new Date(event.start.includes('T') ? event.start : event.start + 'T00:00'), 'MMM d, yyyy') : ''}
+                  {event.start?.includes('T') ? ' · ' + format(new Date(event.start), 'h:mm a') : ' · All day'}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button className="btn btn-ghost flex-1" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary flex-1" onClick={handleImport}
+            disabled={importing || done || selected.length === 0}>
+            {done ? '✓ Imported!' : importing ? 'Importing…' : `Import ${selected.length} event${selected.length !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 // ── Day cell ──────────────────────────────────────────────────
 function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onItemClick, onDayClick }) {
   const isCurrentMonth = day.getMonth() === month.getMonth()
   const isTodayDay     = isToday(day)
   const dateStr        = format(day, 'yyyy-MM-dd')
-  const dayTasks       = tasks.filter(t => t.due_date === dateStr && t.status === 'pending')
+  const dayTasks       = tasks.filter(t => t.due_date === dateStr)
   const dayGEvents     = googleEvents.filter(e => e.start?.startsWith(dateStr))
-
-  // Format time for event chips
-  const eventTime = (e) => e.start?.includes('T')
-    ? format(new Date(e.start), 'h:mm a')
-    : null
 
   return (
     <div onClick={() => onDayClick(dateStr)}
@@ -273,7 +344,6 @@ function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onIt
         {format(day, 'd')}
       </div>
 
-      {/* Habit dots */}
       {isCurrentMonth && habitTotal > 0 && (
         <div className="flex gap-0.5 mb-1 flex-wrap">
           {Array.from({ length: Math.min(habitTotal, 5) }).map((_, i) => (
@@ -283,31 +353,30 @@ function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onIt
         </div>
       )}
 
-      {/* FlowTrail tasks */}
       {dayTasks.slice(0, 1).map(task => (
         <div key={task.id}
           onClick={e => { e.stopPropagation(); onItemClick({ ...task, source: 'task' }) }}
           className="text-xs px-1.5 py-0.5 rounded mb-0.5 truncate cursor-pointer hover:opacity-80"
           style={{
-            background: task.priority === 'high'
-              ? 'color-mix(in srgb, var(--red) 18%, transparent)'
-              : task.priority === 'medium'
-              ? 'color-mix(in srgb, var(--amber) 18%, transparent)'
-              : 'color-mix(in srgb, var(--green) 18%, transparent)',
-            color: task.priority === 'high' ? 'var(--red)' : task.priority === 'medium' ? 'var(--amber)' : 'var(--green)',
+            background: task.status === 'done'
+              ? 'color-mix(in srgb, var(--green) 15%, transparent)'
+              : task.priority === 'high'
+              ? 'color-mix(in srgb, var(--red) 15%, transparent)'
+              : 'color-mix(in srgb, var(--amber) 15%, transparent)',
+            color: task.status === 'done' ? 'var(--green)' : task.priority === 'high' ? 'var(--red)' : 'var(--amber)',
             fontSize: '10px',
+            textDecoration: task.status === 'done' ? 'line-through' : 'none',
           }}>
-          ✓ {task.title}
+          {task.status === 'done' ? '✓' : '●'} {task.due_time ? format(new Date(`${task.due_date}T${task.due_time}`), 'h:mma') + ' ' : ''}{task.title}
         </div>
       ))}
 
-      {/* Google events */}
       {dayGEvents.slice(0, 2).map(event => {
-        const t = eventTime(event)
+        const t = event.start?.includes('T') ? format(new Date(event.start), 'h:mma') : null
         return (
           <div key={event.id}
             onClick={e => { e.stopPropagation(); onItemClick({ ...event, source: 'google' }) }}
-            className="text-xs px-1.5 py-0.5 rounded mb-0.5 cursor-pointer hover:opacity-80 transition-opacity"
+            className="text-xs px-1.5 py-0.5 rounded mb-0.5 truncate cursor-pointer hover:opacity-80"
             style={{ background: event.color || '#4285F4', color: '#fff', fontSize: '10px' }}>
             {t ? `${t} ` : '📅 '}{event.title}
           </div>
@@ -333,11 +402,17 @@ export default function Calendar() {
   const [loading, setLoading]             = useState(false)
   const [syncing, setSyncing]             = useState(false)
   const [showAdd, setShowAdd]             = useState(false)
+  const [showImport, setShowImport]       = useState(false)
   const [addDate, setAddDate]             = useState(TODAY())
   const [selectedItem, setSelectedItem]   = useState(null)
-  const [editingItem, setEditingItem]     = useState(null)  // {event?, task?}
+  const [editingItem, setEditingItem]     = useState(null)
 
-  useEffect(() => { setConnected(isCalendarConnected()) }, [])
+  // Auto-reconnect on mount if token exists
+  useEffect(() => {
+    const hasToken = isCalendarConnected()
+    setConnected(hasToken)
+    if (hasToken) fetchEvents()
+  }, [])
 
   const fetchEvents = useCallback(async () => {
     if (!isCalendarConnected()) return
@@ -347,14 +422,14 @@ export default function Calendar() {
       const end    = endOfMonth(currentMonth)
       const events = await fetchCalendarEvents(start, end)
       setGoogleEvents(events)
-      const todayStr   = format(new Date(), 'yyyy-MM-dd')
-      const todayEvts  = events.filter(e => e.start?.startsWith(todayStr))
+      const todayStr  = format(new Date(), 'yyyy-MM-dd')
+      const todayEvts = events.filter(e => e.start?.startsWith(todayStr))
       scheduleEventNotifications(todayEvts)
-    } catch (err) { console.error('Fetch error:', err) }
+    } catch { /* silent */ }
     setSyncing(false)
   }, [currentMonth, connected])
 
-  useEffect(() => { fetchEvents() }, [fetchEvents])
+  useEffect(() => { if (connected) fetchEvents() }, [fetchEvents])
 
   const handleConnect = async () => {
     setLoading(true)
@@ -362,9 +437,13 @@ export default function Calendar() {
       await requestNotificationPermission()
       await connectGoogleCalendar()
       setConnected(true)
-      fetchEvents()
-    } catch (err) { alert('Could not connect. Allow pop-ups and try again.') }
+    } catch { alert('Could not connect. Allow pop-ups and try again.') }
     setLoading(false)
+  }
+
+  const handleComplete = async (item) => {
+    await toggleTask(item.id)
+    setSelectedItem(null)
   }
 
   const handleEdit = (item) => {
@@ -377,23 +456,12 @@ export default function Calendar() {
     if (!confirm(`Delete "${item.title}"?`)) return
     if (item.source === 'google') {
       await deleteCalendarEvent(item.id)
-      setGoogleEvents(prev => prev.filter(e => e.id !== item.id))
+      setGoogleEvents(p => p.filter(e => e.id !== item.id))
     } else {
       await deleteTask(item.id)
     }
     setSelectedItem(null)
   }
-
-  const handleDayClick = (dateStr) => {
-    setEditingItem(null)
-    setAddDate(dateStr)
-    setShowAdd(true)
-  }
-
-  const monthStart = startOfMonth(currentMonth)
-  const monthEnd   = endOfMonth(currentMonth)
-  const days       = eachDayOfInterval({ start: monthStart, end: monthEnd })
-  const startPad   = getDay(monthStart)
 
   const tasks = useLiveQuery(
     () => userId ? db.tasks.where('user_id').equals(userId).toArray() : Promise.resolve([]), [userId]
@@ -410,19 +478,29 @@ export default function Calendar() {
   const logsByDate = {}
   habitLogs.forEach(l => { logsByDate[l.log_date] = (logsByDate[l.log_date] || 0) + 1 })
 
+  const monthStart = startOfMonth(currentMonth)
+  const monthEnd   = endOfMonth(currentMonth)
+  const days       = eachDayOfInterval({ start: monthStart, end: monthEnd })
+  const startPad   = getDay(monthStart)
+
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
-      {/* Header */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Calendar</h1>
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{format(currentMonth, 'MMMM yyyy')}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {connected && (
-            <button onClick={fetchEvents} disabled={syncing} className="btn btn-ghost p-2">
-              <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} />
-            </button>
+            <>
+              <button onClick={() => setShowImport(true)}
+                className="btn btn-ghost text-sm gap-1.5">
+                <Download size={14} /> Import events
+              </button>
+              <button onClick={fetchEvents} disabled={syncing} className="btn btn-ghost p-2">
+                <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} />
+              </button>
+            </>
           )}
           <button className="btn btn-primary gap-1.5"
             onClick={() => { setEditingItem(null); setAddDate(TODAY()); setShowAdd(true) }}>
@@ -438,17 +516,16 @@ export default function Calendar() {
         </div>
       </div>
 
-      <div className="mb-4">
+      <div className="mb-3">
         <GoogleCalendarBanner connected={connected} onConnect={handleConnect}
           onDisconnect={() => { disconnectCalendar(); setConnected(false); setGoogleEvents([]) }}
           loading={loading} />
       </div>
 
       <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-        Click any day to add · Click any event to view, edit, or delete
+        Click any day to add · Click any event or task to view, edit, complete, or delete
       </p>
 
-      {/* Grid */}
       <div className="card overflow-hidden">
         <div className="grid grid-cols-7 border-b" style={{ borderColor: 'var(--border)' }}>
           {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
@@ -467,19 +544,18 @@ export default function Calendar() {
               habitTotal={habitCount}
               googleEvents={googleEvents}
               onItemClick={setSelectedItem}
-              onDayClick={handleDayClick}
+              onDayClick={(ds) => { setEditingItem(null); setAddDate(ds); setShowAdd(true) }}
             />
           ))}
         </div>
       </div>
 
-      {/* Legend */}
       <div className="flex flex-wrap items-center gap-4 mt-3">
         <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
           <div className="w-1.5 h-1.5 rounded-full bg-[var(--green)]" />Habits
         </div>
         <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-          <div className="w-3 h-2 rounded" style={{ background: 'color-mix(in srgb, var(--amber) 30%, transparent)' }} />FlowTrail task
+          <div className="w-3 h-2 rounded" style={{ background: 'color-mix(in srgb, var(--amber) 30%, transparent)' }} />Task
         </div>
         {connected && (
           <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -488,27 +564,19 @@ export default function Calendar() {
         )}
       </div>
 
-      {/* Detail modal */}
-      <DetailModal
-        item={selectedItem}
-        open={!!selectedItem}
-        onClose={() => setSelectedItem(null)}
-        userId={userId}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-      />
+      <DetailModal item={selectedItem} open={!!selectedItem}
+        onClose={() => setSelectedItem(null)} userId={userId}
+        onEdit={handleEdit} onDelete={handleDelete} onComplete={handleComplete} />
 
-      {/* Add / Edit modal */}
-      <AddEventModal
-        open={showAdd}
+      <AddEventModal open={showAdd}
         onClose={() => { setShowAdd(false); setEditingItem(null) }}
-        userId={userId}
-        defaultDate={addDate}
-        connected={connected}
+        userId={userId} defaultDate={addDate} connected={connected}
         onRefresh={fetchEvents}
         editingEvent={editingItem?.event || null}
-        editingTask={editingItem?.task || null}
-      />
+        editingTask={editingItem?.task || null} />
+
+      <ImportModal open={showImport} onClose={() => setShowImport(false)}
+        events={googleEvents} userId={userId} />
     </div>
   )
 }

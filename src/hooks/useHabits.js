@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db, uuid } from '@/lib/db'
 import { TODAY, fmt } from '@/lib/utils'
 import { upsertToCloud, deleteFromCloud, markLocalWrite } from '@/lib/sync'
+import { useGamificationStore } from '@/store/gamificationStore'
 import { subDays } from 'date-fns'
 
 export function useHabits(userId) {
@@ -47,6 +48,7 @@ export async function toggleHabitLog(habitId, userId) {
     markLocalWrite(existing.id)
     await db.habit_logs.put(updated)
     if (!userId?.startsWith('demo')) upsertToCloud('habit_logs', updated)
+    if (updated.completed) useGamificationStore.getState().recordHabitCheck(1)
   } else {
     const id  = uuid()
     const record = {
@@ -57,6 +59,7 @@ export async function toggleHabitLog(habitId, userId) {
     markLocalWrite(id)
     await db.habit_logs.put(record)
     if (!userId?.startsWith('demo')) upsertToCloud('habit_logs', record)
+    useGamificationStore.getState().recordHabitCheck(1)
   }
 }
 

@@ -3,6 +3,7 @@ import { db, uuid } from '@/lib/db'
 import { TODAY, fmt } from '@/lib/utils'
 import { upsertToCloud, deleteFromCloud, markLocalWrite } from '@/lib/sync'
 import { useGamificationStore } from '@/store/gamificationStore'
+import { pushGamification } from '@/lib/gamificationSync'
 import { subDays } from 'date-fns'
 
 export function useHabits(userId) {
@@ -49,7 +50,7 @@ export async function toggleHabitLog(habitId, userId) {
     await db.habit_logs.put(updated)
     if (!userId?.startsWith('demo')) upsertToCloud('habit_logs', updated)
     // Award XP only when marking as done (not undoing)
-    if (updated.completed) useGamificationStore.getState().recordHabitDone()
+    if (updated.completed) { useGamificationStore.getState().recordHabitDone(); pushGamification(userId) }
   } else {
     const id  = uuid()
     const record = {
@@ -62,6 +63,7 @@ export async function toggleHabitLog(habitId, userId) {
     if (!userId?.startsWith('demo')) upsertToCloud('habit_logs', record)
     // New log — always completed=true, award XP
     useGamificationStore.getState().recordHabitDone()
+    pushGamification(userId)
   }
 }
 

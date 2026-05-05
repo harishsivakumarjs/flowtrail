@@ -79,7 +79,6 @@ export default function App() {
     if (!user?.id || user?.demo || !supabase) return
     setSyncing(true)
     fullSync(user.id).then(() => { setSyncing(false); setLastSync() })
-    pullGamification(user.id)
     const unsub    = subscribeRealtime(user.id, () => setLastSync())
     const interval = setInterval(() => {
       if (navigator.onLine) {
@@ -87,12 +86,13 @@ export default function App() {
         pushGamification(user.id)
       }
     }, 15000)
-    // Push gamification when XP changes
-    const unsubGami = useGamificationStore.subscribe(
-      s => s.xp,
-      () => pushGamification(user.id)
-    )
-    return () => { unsub(); clearInterval(interval); unsubGami() }
+    // Push gamification every 20 seconds
+    const gami = setInterval(() => pushGamification(user.id), 20000)
+
+    // Also pull on mount to get latest from other device
+    pullGamification(user.id)
+
+    return () => { unsub(); clearInterval(interval); clearInterval(gami) }
   }, [user?.id])
 
   return (

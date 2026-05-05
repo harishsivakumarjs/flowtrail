@@ -4,6 +4,7 @@ import { TODAY } from '@/lib/utils'
 import { upsertToCloud, deleteFromCloud, markLocalWrite } from '@/lib/sync'
 import { createCalendarEvent, isCalendarConnected } from '@/lib/googleCalendar'
 import { useGamificationStore } from '@/store/gamificationStore'
+import { pushGamification } from '@/lib/gamificationSync'
 
 export function useTasks(userId, filter = 'today') {
   const today = TODAY()
@@ -66,6 +67,7 @@ export async function toggleTask(id) {
   // Award XP when completing
   if (!isDone) {
     useGamificationStore.getState().recordTaskDone()
+    pushGamification(task.user_id)
   }
 }
 

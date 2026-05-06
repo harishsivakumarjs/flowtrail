@@ -331,7 +331,9 @@ function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onIt
   const dayGEvents     = googleEvents.filter(e => e.start?.startsWith(dateStr))
 
   return (
-    <div onClick={() => onDayClick(dateStr)}
+    <div
+      onClick={() => onDayClick(dateStr)}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onRightClick(e, dateStr) }}
       className={`min-h-[80px] md:min-h-[100px] p-1.5 border-b border-r flex flex-col cursor-pointer
         hover:bg-[var(--bg-overlay)] transition-colors
         ${!isCurrentMonth ? 'opacity-30' : ''}

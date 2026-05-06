@@ -447,15 +447,20 @@ export default function Calendar() {
     setLoading(false)
   }
 
-  // Close context menu on click outside
+  // Close context menu on click outside — attach AFTER menu opens
   useEffect(() => {
     if (!contextMenu) return
-    const close = (e) => {
-      // Small timeout so the right-click open doesn't immediately close
-      setTimeout(() => setContextMenu(null), 10)
+    const handler = () => setContextMenu(null)
+    // Use setTimeout to skip the current event loop tick
+    const t = setTimeout(() => {
+      window.addEventListener('click', handler, { once: true })
+      window.addEventListener('contextmenu', handler, { once: true })
+    }, 0)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('click', handler)
+      window.removeEventListener('contextmenu', handler)
     }
-    window.addEventListener('click', close, { once: true })
-    return () => window.removeEventListener('click', close)
   }, [contextMenu])
 
   const handleRightClick = (e, dateStr) => {

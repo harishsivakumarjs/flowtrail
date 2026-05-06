@@ -80,7 +80,7 @@ export async function computeStreak(habitId) {
   return streak
 }
 
-export async function addHabit({ name, icon, color, userId }) {
+export async function addHabit({ name, icon, color, userId, goalDays }) {
   const count = await db.habits.where('user_id').equals(userId).count()
   const id    = uuid()
   const now   = new Date().toISOString()
@@ -91,7 +91,7 @@ export async function addHabit({ name, icon, color, userId }) {
     frequency:   'daily',
     target_days: [1,2,3,4,5,6,7],
     goal_type:   'streak',
-    goal_value:  30,
+    goal_value:  goalDays || 30,
     sort_order:  count,
     archived:    false,
     created_at:  now,

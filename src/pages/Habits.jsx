@@ -15,18 +15,19 @@ const ICONS  = ['●','★','♥','◆','▲','⚡','🏃','📚','💧','🧘',
 
 // ── Add/Edit Habit Modal ──────────────────────────────────────
 function AddHabitModal({ open, onClose, userId, editing = null }) {
-  const [name, setName]     = useState(editing?.name || '')
-  const [icon, setIcon]     = useState(editing?.icon || '●')
-  const [color, setColor]   = useState(editing?.color || '#5254e7')
-  const [saving, setSaving] = useState(false)
+  const [name, setName]       = useState(editing?.name || '')
+  const [icon, setIcon]       = useState(editing?.icon || '●')
+  const [color, setColor]     = useState(editing?.color || '#5254e7')
+  const [goalDays, setGoalDays] = useState(editing?.goal_value || 30)
+  const [saving, setSaving]   = useState(false)
 
   const handleSave = async () => {
     if (!name.trim()) return
     setSaving(true)
     if (editing) {
-      await updateHabit(editing.id, { name: name.trim(), icon, color })
+      await updateHabit(editing.id, { name: name.trim(), icon, color, goal_value: Number(goalDays) })
     } else {
-      await addHabit({ name: name.trim(), icon, color, userId })
+      await addHabit({ name: name.trim(), icon, color, userId, goalDays: Number(goalDays) })
     }
     setSaving(false)
     onClose()
@@ -62,6 +63,26 @@ function AddHabitModal({ open, onClose, userId, editing = null }) {
                 style={{ background: c }} />
             ))}
           </div>
+        </div>
+        <div>
+          <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+            Monthly goal (days)
+            <span className="ml-1 font-normal" style={{ color: 'var(--text-muted)' }}>
+              — progress bar shows % of this goal
+            </span>
+          </label>
+          <div className="flex items-center gap-3">
+            <input type="range" min="1" max="31" value={goalDays}
+              onChange={e => setGoalDays(e.target.value)}
+              className="flex-1 accent-[var(--brand)]" />
+            <span className="w-16 text-center text-sm font-semibold px-3 py-1.5 rounded-xl"
+              style={{ background: 'var(--bg-overlay)', color: 'var(--brand)' }}>
+              {goalDays}d
+            </span>
+          </div>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            100% = completing this habit {goalDays} days this month
+          </p>
         </div>
         <div className="flex gap-2 pt-2">
           <button className="btn btn-ghost flex-1" onClick={onClose}>Cancel</button>
@@ -151,120 +172,140 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 // ── Habit charts ──────────────────────────────────────────────
 function HabitCharts({ habits, logs, daysInMonth }) {
-  const today = new Date()
+  const today      = new Date()
   const daysPassed = Math.min(today.getDate(), daysInMonth)
 
   const stats = useMemo(() => {
     return habits.map(h => {
-      const doneLogs = logs.filter(l => l.habit_id === h.id && l.completed)
-      const done     = doneLogs.length
-      const pct      = daysPassed > 0 ? Math.round(done / daysPassed * 100) : 0
-      return { name: `${h.icon} ${h.name}`, done, total: daysPassed, pct, color: h.color || '#5254e7' }
+      const done  = logs.filter(l => l.habit_id === h.id && l.completed).length
+      const goal  = h.goal_value || 30  // user-defined goal days
+      const pct   = goal > 0 ? Math.min(100, Math.round(done / goal * 100)) : 0
+      const shortName = h.name.length > 10 ? h.name.slice(0, 9) + '…' : h.name
+      return {
+        name:      `${h.icon} ${shortName}`,
+        fullName:  `${h.icon} ${h.name}`,
+        done,
+        goal,
+        pct,
+        color:     h.color || '#5254e7',
+      }
     })
-  }, [habits, logs, daysPassed])
+  }, [habits, logs])
 
-  // Pie chart: completed vs missed across all habits
-  const totalPossible = habits.length * daysPassed
-  const totalDone     = logs.filter(l => l.completed).length
-  const totalMissed   = Math.max(0, totalPossible - totalDone)
+  // Pie: completed vs missed vs remaining (based on goals)
+  const totalGoal   = habits.reduce((s, h) => s + (h.goal_value || 30), 0)
+  const totalDone   = logs.filter(l => l.completed).length
+  const totalMissed = Math.max(0, habits.length * daysPassed - totalDone)
+  const overallPct  = totalGoal > 0 ? Math.min(100, Math.round(totalDone / totalGoal * 100)) : 0
+
   const pieData = [
     { name: 'Completed', value: totalDone,   color: '#22c55e' },
-    { name: 'Missed',    value: totalMissed, color: 'var(--border-mid)' },
+    { name: 'Remaining', value: Math.max(0, totalGoal - totalDone), color: 'var(--border-mid)' },
   ].filter(d => d.value > 0)
-
-  const overallPct = totalPossible > 0 ? Math.round(totalDone / totalPossible * 100) : 0
 
   if (habits.length === 0) return null
 
+  const CustomBar = ({ x, y, width, height, fill }) => (
+    <rect x={x} y={y} width={width} height={height} fill={fill} rx={4} ry={4} />
+  )
+
+  const GoalTooltip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null
+    const s = stats.find(st => st.name === label)
+    return (
+      <div className="card px-3 py-2 text-xs space-y-1" style={{ color: 'var(--text-primary)' }}>
+        <p className="font-medium">{s?.fullName || label}</p>
+        <p style={{ color: '#22c55e' }}>Done: {s?.done} days</p>
+        <p style={{ color: 'var(--brand)' }}>Goal: {s?.goal} days</p>
+        <p style={{ color: s?.pct >= 100 ? '#22c55e' : 'var(--amber)' }}>Progress: {s?.pct}%</p>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-4 mt-4">
-      {/* Pie chart — monthly overview */}
-      <div className="card p-4 md:p-5">
-        <h2 className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-          Monthly completion overview
-        </h2>
-        <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-          {format(today, 'MMMM yyyy')} · {daysPassed} days tracked
-        </p>
+    <div className="mt-4">
+      {/* Side by side on desktop, stacked on mobile */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-        <div className="flex flex-col md:flex-row items-center gap-6">
-          {/* Pie */}
-          <div className="relative">
-            <ResponsiveContainer width={180} height={180}>
-              <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={80}
-                  dataKey="value" startAngle={90} endAngle={-270} strokeWidth={0}>
-                  {pieData.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-              </PieChart>
-            </ResponsiveContainer>
-            {/* Center label */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{overallPct}%</span>
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>done</span>
+        {/* LEFT — Pie chart */}
+        <div className="card p-4 md:p-5">
+          <h2 className="text-sm font-medium mb-0.5" style={{ color: 'var(--text-primary)' }}>
+            Monthly overview
+          </h2>
+          <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+            {format(today, 'MMMM yyyy')} · vs combined goals
+          </p>
+          <div className="flex flex-col items-center gap-5">
+            <div className="relative">
+              <ResponsiveContainer width={200} height={200}>
+                <PieChart>
+                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={88}
+                    dataKey="value" startAngle={90} endAngle={-270} strokeWidth={0}>
+                    {pieData.map((entry, i) => (
+                      <Cell key={i} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>{overallPct}%</span>
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>of goal</span>
+              </div>
             </div>
-          </div>
-
-          {/* Legend + stats */}
-          <div className="flex-1 space-y-3">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full" style={{ background: '#22c55e' }} />
-              <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                Completed: <strong>{totalDone}</strong>
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full" style={{ background: 'var(--border-mid)' }} />
-              <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                Missed: <strong>{totalMissed}</strong>
-              </span>
-            </div>
-            <div className="text-xs pt-1" style={{ color: 'var(--text-muted)' }}>
-              {totalDone} of {totalPossible} possible habit completions this month
+            <div className="w-full space-y-2">
+              <div className="flex items-center gap-2 text-sm">
+                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: '#22c55e' }} />
+                <span style={{ color: 'var(--text-primary)' }}>Completed: <strong>{totalDone}</strong> days</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: 'var(--border-mid)' }} />
+                <span style={{ color: 'var(--text-primary)' }}>Remaining: <strong>{Math.max(0, totalGoal - totalDone)}</strong> days</span>
+              </div>
+              <p className="text-xs pt-1" style={{ color: 'var(--text-muted)' }}>
+                {totalDone} of {totalGoal} combined goal days completed
+              </p>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Bar chart — per habit */}
-      <div className="card p-4 md:p-5">
-        <h2 className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-          Per-habit completion rate
-        </h2>
-        <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-          Days completed out of {daysPassed} days this month
-        </p>
+        {/* RIGHT — Vertical bar chart (goal-based) */}
+        <div className="card p-4 md:p-5">
+          <h2 className="text-sm font-medium mb-0.5" style={{ color: 'var(--text-primary)' }}>
+            Per-habit progress
+          </h2>
+          <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+            % of each habit's personal goal this month
+          </p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={stats} margin={{ top: 5, right: 10, left: -20, bottom: 40 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                tickLine={false} axisLine={false} angle={-35} textAnchor="end" interval={0} />
+              <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                tickLine={false} axisLine={false} />
+              <Tooltip content={<GoalTooltip />} />
+              <Bar dataKey="pct" radius={[4,4,0,0]} maxBarSize={40} shape={CustomBar}>
+                {stats.map((s, i) => (
+                  <Cell key={i} fill={s.pct >= 100 ? '#22c55e' : s.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
 
-        <ResponsiveContainer width="100%" height={Math.max(180, habits.length * 40)}>
-          <BarChart data={stats} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-            <XAxis type="number" domain={[0, 100]} unit="%" tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-              tickLine={false} axisLine={false} />
-            <YAxis type="category" dataKey="name" width={120}
-              tick={{ fontSize: 11, fill: 'var(--text-primary)' }} tickLine={false} axisLine={false} />
-            <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="pct" name="Completion %" radius={[0, 4, 4, 0]} maxBarSize={24}>
-              {stats.map((s, i) => (
-                <Cell key={i} fill={s.color} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-
-        {/* Summary table */}
-        <div className="mt-4 space-y-2">
-          {stats.map((s, i) => (
-            <div key={i} className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
-              <span className="text-xs flex-1 truncate" style={{ color: 'var(--text-primary)' }}>{s.name}</span>
-              <span className="text-xs font-medium font-mono" style={{ color: s.pct >= 70 ? 'var(--green)' : s.pct >= 40 ? 'var(--amber)' : 'var(--red)' }}>
-                {s.done}/{s.total} days ({s.pct}%)
-              </span>
-            </div>
-          ))}
+          {/* Summary table */}
+          <div className="mt-3 space-y-1.5 max-h-40 overflow-y-auto">
+            {stats.map((s, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+                <span className="text-xs flex-1 truncate" style={{ color: 'var(--text-primary)' }}>{s.fullName}</span>
+                <span className="text-xs font-medium font-mono flex-shrink-0"
+                  style={{ color: s.pct >= 100 ? 'var(--green)' : s.pct >= 60 ? 'var(--amber)' : 'var(--red)' }}>
+                  {s.done}/{s.goal}d ({s.pct}%)
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

@@ -359,12 +359,18 @@ export default function Habits() {
   const CELL_W       = 26 // px per day cell
 
   // Sync horizontal scroll between header and rows
+  const isSyncing = useRef(false)
   const onScroll = useCallback((e) => {
+    if (isSyncing.current) return
+    isSyncing.current = true
     const left = e.target.scrollLeft
+    // Sync header
     if (headerRef.current) headerRef.current.scrollLeft = left
+    // Sync all habit rows
     document.querySelectorAll('.habit-scroll').forEach(el => {
       if (el !== e.target) el.scrollLeft = left
     })
+    requestAnimationFrame(() => { isSyncing.current = false })
   }, [])
 
   // Auto-scroll to today on mount
@@ -404,8 +410,8 @@ export default function Habits() {
             <div className="flex items-center gap-3 mb-2 pb-2 border-b" style={{ borderColor: 'var(--border)' }}>
               <div className="w-28 md:w-44 flex-shrink-0 text-xs" style={{ color: 'var(--text-muted)' }}>Habit</div>
               <div ref={headerRef}
-                className="flex gap-0.5 flex-1 overflow-x-hidden"
-                style={{ scrollbarWidth: 'none' }}>
+                className="flex gap-0.5 flex-1 overflow-x-auto"
+                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', pointerEvents: 'none' }}>
                 {dayLabels.map(d => {
                   const ds = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`
                   const isToday = ds === format(today, 'yyyy-MM-dd')

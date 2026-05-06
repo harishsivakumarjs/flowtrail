@@ -1,12 +1,12 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Zap, CheckSquare, BookOpen, BarChart2 } from 'lucide-react'
+import { LayoutDashboard, Zap, CheckSquare, CalendarDays, BarChart2 } from 'lucide-react'
 
 const TABS = [
-  { to: '/dashboard',           icon: LayoutDashboard, label: 'Home',    end: true },
-  { to: '/dashboard/habits',    icon: Zap,             label: 'Habits',  end: false },
-  { to: '/dashboard/tasks',     icon: CheckSquare,     label: 'Tasks',   end: false },
-  { to: '/dashboard/journal',   icon: BookOpen,        label: 'Journal', end: false },
-  { to: '/dashboard/analytics', icon: BarChart2,       label: 'More',    end: false },
+  { to: '/dashboard',           icon: LayoutDashboard, label: 'Home',     end: true  },
+  { to: '/dashboard/habits',    icon: Zap,             label: 'Habits',   end: false },
+  { to: '/dashboard/tasks',     icon: CheckSquare,     label: 'Tasks',    end: false },
+  { to: '/dashboard/calendar',  icon: CalendarDays,    label: 'Calendar', end: false },
+  { to: '/dashboard/analytics', icon: BarChart2,       label: 'More',     end: false },
 ]
 
 export default function BottomNav() {

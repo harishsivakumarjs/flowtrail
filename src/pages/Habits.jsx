@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { Plus, Flame, Trash2, Edit2 } from 'lucide-react'
 import { format, getDaysInMonth } from 'date-fns'
 import { useAppStore } from '@/store/appStore'
@@ -95,9 +95,10 @@ function AddHabitModal({ open, onClose, userId, editing = null }) {
   )
 }
 
-// ── Habit row in grid ─────────────────────────────────────────
-function HabitRow({ habit, userId, logs, daysInMonth, today }) {
+// ── Habit row with synced scroll ─────────────────────────────
+function HabitRowScrolled({ habit, userId, logs, daysInMonth, today, cellW, onScroll, isFirst, scrollRef }) {
   const [showEdit, setShowEdit] = useState(false)
+  const rowScrollRef = useRef(null)
   const yearStr  = format(today, 'yyyy')
   const monthStr = format(today, 'MM')
 
@@ -113,10 +114,19 @@ function HabitRow({ habit, userId, logs, daysInMonth, today }) {
     else break
   }
 
+  // Give first row's ref to parent for auto-scroll
+  useEffect(() => {
+    if (isFirst && rowScrollRef.current) {
+      const todayDay = today.getDate()
+      const offset = Math.max(0, (todayDay - 4) * cellW)
+      rowScrollRef.current.scrollLeft = offset
+    }
+  }, [isFirst])
+
   return (
     <>
       <div className="flex items-center gap-3 py-2 group">
-        <div className="w-32 md:w-44 flex items-center gap-2 flex-shrink-0">
+        <div className="w-28 md:w-44 flex items-center gap-2 flex-shrink-0">
           <span className="text-base">{habit.icon}</span>
           <div className="min-w-0">
             <div className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{habit.name}</div>
@@ -128,22 +138,38 @@ function HabitRow({ habit, userId, logs, daysInMonth, today }) {
           </div>
         </div>
 
-        <div className="flex gap-0.5 flex-1 overflow-x-auto">
+        {/* Scrollable cells — all rows share same scroll position */}
+        <div ref={rowScrollRef}
+          className="habit-scroll flex gap-0.5 flex-1 overflow-x-auto"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          onScroll={onScroll}>
           {Array.from({ length: daysInMonth }).map((_, i) => {
             const day = i + 1
             const ds  = `${yearStr}-${monthStr}-${String(day).padStart(2,'0')}`
-            const done = logMap[ds] === true
+            const done    = logMap[ds] === true
             const isToday = ds === format(today, 'yyyy-MM-dd')
             return (
-              <div key={day} title={ds}
+              <div key={day}
+                title={format(new Date(ds + 'T00:00'), 'MMM d')}
                 onClick={() => toggleHabitLog(habit.id, userId)}
-                className={`habit-cell ${done ? 'done' : ''} ${isToday ? 'today' : ''}`}
-                style={done ? { background: habit.color || 'var(--green)' } : {}} />
+                className="flex-shrink-0 cursor-pointer rounded-md transition-all"
+                style={{
+                  width:  cellW - 2,
+                  height: cellW - 2,
+                  margin: 1,
+                  background: done
+                    ? habit.color || 'var(--green)'
+                    : 'var(--bg-overlay)',
+                  border: isToday
+                    ? '2px solid var(--brand)'
+                    : '1.5px solid transparent',
+                  opacity: ds > format(today, 'yyyy-MM-dd') ? 0.3 : 1,
+                }} />
             )
           })}
         </div>
 
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
           <button onClick={() => setShowEdit(true)}
             className="p-1.5 rounded-lg hover:bg-[var(--bg-overlay)]"
             style={{ color: 'var(--text-muted)' }}><Edit2 size={13} /></button>
@@ -326,6 +352,29 @@ export default function Habits() {
   const daysInMonth  = getDaysInMonth(today)
   const dayLabels    = Array.from({ length: daysInMonth }, (_, i) => i + 1)
 
+  // Shared scroll ref — header + all rows scroll together
+  const scrollRef    = useRef(null)
+  const headerRef    = useRef(null)
+  const todayDay     = today.getDate()
+  const CELL_W       = 26 // px per day cell
+
+  // Sync horizontal scroll between header and rows
+  const onScroll = useCallback((e) => {
+    const left = e.target.scrollLeft
+    if (headerRef.current) headerRef.current.scrollLeft = left
+    document.querySelectorAll('.habit-scroll').forEach(el => {
+      if (el !== e.target) el.scrollLeft = left
+    })
+  }, [])
+
+  // Auto-scroll to today on mount
+  useEffect(() => {
+    if (!scrollRef.current) return
+    const offset = Math.max(0, (todayDay - 4) * CELL_W)
+    scrollRef.current.scrollLeft = offset
+    document.querySelectorAll('.habit-scroll').forEach(el => { el.scrollLeft = offset })
+  }, [habits.length, todayDay])
+
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -341,7 +390,7 @@ export default function Habits() {
       </div>
 
       {/* Habit grid */}
-      <div className="card overflow-auto">
+      <div className="card overflow-hidden">
         {habits.length === 0 ? (
           <div className="py-16 text-center">
             <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>No habits yet</p>
@@ -351,16 +400,24 @@ export default function Habits() {
           </div>
         ) : (
           <div className="p-4">
-            {/* Header row */}
+            {/* Sticky header row with synced scroll */}
             <div className="flex items-center gap-3 mb-2 pb-2 border-b" style={{ borderColor: 'var(--border)' }}>
-              <div className="w-32 md:w-44 flex-shrink-0 text-xs" style={{ color: 'var(--text-muted)' }}>Habit</div>
-              <div className="flex gap-0.5 flex-1 overflow-x-auto">
+              <div className="w-28 md:w-44 flex-shrink-0 text-xs" style={{ color: 'var(--text-muted)' }}>Habit</div>
+              <div ref={headerRef}
+                className="flex gap-0.5 flex-1 overflow-x-hidden"
+                style={{ scrollbarWidth: 'none' }}>
                 {dayLabels.map(d => {
                   const ds = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`
                   const isToday = ds === format(today, 'yyyy-MM-dd')
                   return (
-                    <div key={d} className="w-[22px] text-center flex-shrink-0 font-mono"
-                      style={{ color: isToday ? 'var(--brand)' : 'var(--text-muted)', fontSize: '10px', fontWeight: isToday ? 700 : 400 }}>
+                    <div key={d}
+                      className="flex-shrink-0 text-center font-mono"
+                      style={{
+                        width: CELL_W,
+                        color: isToday ? 'var(--brand)' : 'var(--text-muted)',
+                        fontSize: '10px',
+                        fontWeight: isToday ? 700 : 400
+                      }}>
                       {d}
                     </div>
                   )
@@ -368,17 +425,27 @@ export default function Habits() {
               </div>
             </div>
 
+            {/* Habit rows */}
             <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-              {habits.map(habit => (
-                <HabitRow key={habit.id} habit={habit} userId={userId}
-                  logs={logs} daysInMonth={daysInMonth} today={today} />
+              {habits.map((habit, idx) => (
+                <HabitRowScrolled
+                  key={habit.id}
+                  habit={habit}
+                  userId={userId}
+                  logs={logs}
+                  daysInMonth={daysInMonth}
+                  today={today}
+                  cellW={CELL_W}
+                  onScroll={onScroll}
+                  isFirst={idx === 0}
+                />
               ))}
             </div>
           </div>
         )}
       </div>
 
-      {/* Charts — shown below the grid */}
+      {/* Charts */}
       <HabitCharts habits={habits} logs={logs} daysInMonth={daysInMonth} />
 
       <AddHabitModal open={showAdd} onClose={() => setShowAdd(false)} userId={userId} />

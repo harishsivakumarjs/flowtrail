@@ -323,7 +323,7 @@ function ImportModal({ open, onClose, events, userId }) {
 }
 
 // ── Day cell ──────────────────────────────────────────────────
-function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onItemClick, onDayClick }) {
+function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onItemClick, onDayClick, onRightClick }) {
   const isCurrentMonth = day.getMonth() === month.getMonth()
   const isTodayDay     = isToday(day)
   const dateStr        = format(day, 'yyyy-MM-dd')
@@ -407,6 +407,7 @@ export default function Calendar() {
   const [addDate, setAddDate]             = useState(TODAY())
   const [selectedItem, setSelectedItem]   = useState(null)
   const [editingItem, setEditingItem]     = useState(null)
+  const [contextMenu, setContextMenu]     = useState(null) // { x, y, dateStr }
 
   // Auto-reconnect on mount if token exists
   useEffect(() => {
@@ -442,6 +443,19 @@ export default function Calendar() {
       setConnected(true)
     } catch { alert('Could not connect. Allow pop-ups and try again.') }
     setLoading(false)
+  }
+
+  // Close context menu on any click
+  useEffect(() => {
+    const close = () => setContextMenu(null)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [])
+
+  const handleRightClick = (e, dateStr) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY, dateStr })
   }
 
   const handleComplete = async (item) => {
@@ -642,6 +656,50 @@ export default function Calendar() {
           </div>
         )}
       </div>
+
+      {/* Right-click context menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 rounded-xl shadow-lg overflow-hidden animate-fade-in"
+          style={{
+            top: contextMenu.y,
+            left: contextMenu.x,
+            background: 'var(--bg-raised)',
+            border: '1px solid var(--border)',
+            minWidth: 200,
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="px-3 py-2 border-b" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+              {(() => {
+                try {
+                  return new Date(contextMenu.dateStr + 'T00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                } catch { return contextMenu.dateStr }
+              })()}
+            </p>
+          </div>
+          {[
+            { label: '+ Add task', type: 'task', icon: '📋' },
+            { label: '+ Add Google event', type: 'event', icon: '📅' },
+          ].map(item => (
+            <button
+              key={item.type}
+              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left transition-colors hover:bg-[var(--bg-overlay)]"
+              style={{ color: 'var(--text-primary)' }}
+              onClick={() => {
+                setContextMenu(null)
+                setEditingItem(null)
+                setAddDate(contextMenu.dateStr)
+                setShowAdd(true)
+              }}
+            >
+              <span>{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <DetailModal item={selectedItem} open={!!selectedItem}
         onClose={() => setSelectedItem(null)} userId={userId}

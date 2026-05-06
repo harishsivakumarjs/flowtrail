@@ -41,82 +41,16 @@ Built entirely from scratch as a solo project — from database schema to UI des
 
 ## Features
 
-### 📋 Habit Tracking
-- Month-view grid showing every day at a glance
-- Streak tracking with flame indicators
-- **Custom goals** — set personal target days per habit (e.g. "No Sugar: 20 days")
-- Progress shown as % of your goal, not just days elapsed
-- Donut pie chart + vertical bar chart for monthly overview
-- Synced scroll — swipe the grid and all habits move together
-
-### ✅ Task Management
-- Priority levels (High / Medium / Low) with color coding
-- Due date + optional time — get notified 30 minutes before
-- **Future task warning** — clicking complete on a future task asks "do you really mean this?"
-- Grouped upcoming view — Tomorrow, day-of-week headers, sorted by date then priority
-- Tasks auto-appear in Google Calendar when created (if connected)
-
-### 📖 Journal
-- **Multiple entries per day** — morning, evening, and anything in between
-- Optional title per entry
-- Rich text editor with formatting (bold, lists, headings)
-- Daily writing prompts to get you started
-- Auto-save every 30 seconds
-- Sidebar grouped by date with word count
-
-### 📅 Google Calendar Integration
-- Connect your Google Calendar with one click
-- See all your Google events directly inside FlowTrail's calendar view
-- Create FlowTrail tasks → automatically creates a Google Calendar event
-- Click any event to view details, edit, delete, or import as a task
-- Bulk import Google events as FlowTrail tasks
-- 30-minute browser notifications before any event or task
-
-### 🎯 Focus Mode
-- **Pomodoro timer** — 15, 25, 45, 60 minute presets with a circular progress ring
-- Session labeling — name what you're working on
-- **Web blocker** — paste any URL, blocked sites get intercepted with your rules
-- **Daily time limits** — e.g. "Instagram: max 30 minutes per day"
-- **Delay before opening** — adds a cooldown countdown before a blocked site opens
-- **Intent gate** — forces you to write why you need a site before visiting
-- **Friction ladder** — each attempt at a blocked site adds a longer wait (5s → 15s → 30s → 60s)
-- Session history with completion stats
-
-### 📊 Analytics
-- Weekly productivity score (0–100%)
-- Per-habit completion trends over 14 days
-- Sleep tracking with line chart
-- Badges progress board
-
-### 🏆 Gamification
-- **XP system** — earn XP for every habit, task, journal entry, and focus session
-- **10 levels** — Novice → Apprentice → Practitioner → ... → FlowTrail Pro
-- **10 badges** — First Step, Week Warrior, Iron Will, Deep Worker, Perfect Day, and more
-- XP synced across all devices in real time
-- Toast notification every time you earn XP
-
-### 🤖 AI Productivity Assistant
-- "Plan My Day" — type your main goal, AI breaks it into 3–6 prioritised tasks
-- One-click add all suggested tasks to your day
-- Powered by Claude (Anthropic) via a Vercel edge function
-
-### 🧠 Dopamine Control System
-- Live focus score (0–100) based on your behaviour
-- Tracks tab switches, inactivity, and rapid switching
-- Warning toasts when you're getting distracted: *"You are getting distracted — come back!"*
-- Score drops on distraction, recovers when you refocus
-
-### 🔄 Cross-device Real-time Sync
-- Write a habit on laptop → appears on phone in under 2 seconds
-- Powered by Supabase Postgres Changes (real-time WebSocket)
-- 15-second polling fallback for reliability
-- Offline-first — works without internet, syncs when reconnected
-
-### 📱 Mobile PWA
-- Installable on Android from Chrome — opens fullscreen like a native app
-- Thumb-friendly bottom navigation
-- Responsive layout adapts to all screen sizes
-- Dark mode by default with light mode toggle
+- **Habit tracker** — daily grid view, streaks, colour-coded per habit
+- **To-do list** — priorities (high/med/low), due dates, filter by today/upcoming/all
+- **Calendar** — unified monthly view of habits and tasks
+- **Journal** — daily rich-text writing with rotating prompts, auto-save, word count, entry history
+- **Analytics** — completion charts, sleep trends, per-habit breakdown
+- **Sleep logging** — track hours slept, see patterns over time
+- **Dark & light mode** — toggle anytime, persisted across sessions
+- **Offline-first** — works without internet, syncs when connected
+- **Cross-device sync** — same data on laptop, phone, and tablet via Supabase real-time
+- **PWA** — install on Android (Add to Home Screen) and Windows (Chrome install)
 
 ---
 

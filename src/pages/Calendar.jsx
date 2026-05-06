@@ -323,7 +323,7 @@ function ImportModal({ open, onClose, events, userId }) {
 }
 
 // ── Day cell ──────────────────────────────────────────────────
-function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onItemClick, onDayClick, onRightClick }) {
+function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onItemClick, onDayClick }) {
   const isCurrentMonth = day.getMonth() === month.getMonth()
   const isTodayDay     = isToday(day)
   const dateStr        = format(day, 'yyyy-MM-dd')
@@ -333,7 +333,7 @@ function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onIt
   return (
     <div
       onClick={() => onDayClick(dateStr)}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onRightClick(e, dateStr) }}
+      onDoubleClick={(e) => { e.stopPropagation(); onDayClick(dateStr, true) }}
       className={`min-h-[80px] md:min-h-[100px] p-1.5 border-b border-r flex flex-col cursor-pointer
         hover:bg-[var(--bg-overlay)] transition-colors
         ${!isCurrentMonth ? 'opacity-30' : ''}
@@ -409,7 +409,6 @@ export default function Calendar() {
   const [addDate, setAddDate]             = useState(TODAY())
   const [selectedItem, setSelectedItem]   = useState(null)
   const [editingItem, setEditingItem]     = useState(null)
-  const [contextMenu, setContextMenu]     = useState(null) // { x, y, dateStr }
 
   // Auto-reconnect on mount if token exists
   useEffect(() => {
@@ -447,26 +446,6 @@ export default function Calendar() {
     setLoading(false)
   }
 
-  // Close context menu on click outside — attach AFTER menu opens
-  useEffect(() => {
-    if (!contextMenu) return
-    const handler = () => setContextMenu(null)
-    // Use setTimeout to skip the current event loop tick
-    const t = setTimeout(() => {
-      window.addEventListener('click', handler, { once: true })
-      window.addEventListener('contextmenu', handler, { once: true })
-    }, 0)
-    return () => {
-      clearTimeout(t)
-      window.removeEventListener('click', handler)
-      window.removeEventListener('contextmenu', handler)
-    }
-  }, [contextMenu])
-
-  const handleRightClick = (e, dateStr) => {
-    e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY, dateStr })
-  }
 
   const handleComplete = async (item) => {
     await toggleTask(item.id)
@@ -666,50 +645,6 @@ export default function Calendar() {
           </div>
         )}
       </div>
-
-      {/* Right-click context menu */}
-      {contextMenu && (
-        <div
-          className="fixed z-50 rounded-xl shadow-lg overflow-hidden animate-fade-in"
-          style={{
-            top: contextMenu.y,
-            left: contextMenu.x,
-            background: 'var(--bg-raised)',
-            border: '1px solid var(--border)',
-            minWidth: 200,
-          }}
-          onClick={e => e.stopPropagation()}
-        >
-          <div className="px-3 py-2 border-b" style={{ borderColor: 'var(--border)' }}>
-            <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-              {(() => {
-                try {
-                  return new Date(contextMenu.dateStr + 'T00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-                } catch { return contextMenu.dateStr }
-              })()}
-            </p>
-          </div>
-          {[
-            { label: '+ Add task', type: 'task', icon: '📋' },
-            { label: '+ Add Google event', type: 'event', icon: '📅' },
-          ].map(item => (
-            <button
-              key={item.type}
-              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left transition-colors hover:bg-[var(--bg-overlay)]"
-              style={{ color: 'var(--text-primary)' }}
-              onClick={() => {
-                setContextMenu(null)
-                setEditingItem(null)
-                setAddDate(contextMenu.dateStr)
-                setShowAdd(true)
-              }}
-            >
-              <span>{item.icon}</span>
-              {item.label}
-            </button>
-          ))}
-        </div>
-      )}
 
       <DetailModal item={selectedItem} open={!!selectedItem}
         onClose={() => setSelectedItem(null)} userId={userId}

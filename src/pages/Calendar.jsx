@@ -550,7 +550,7 @@ export default function Calendar() {
               habitTotal={habitCount}
               googleEvents={googleEvents}
               onItemClick={setSelectedItem}
-              onDayClick={(ds) => { setSelectedDay(ds === selectedDay ? null : ds) }}
+              onDayClick={(ds, openAdd) => { if (openAdd) { setEditingItem(null); setAddDate(ds); setShowAdd(true) } else { setSelectedDay(ds === selectedDay ? null : ds) } }}
             />
           ))}
         </div>

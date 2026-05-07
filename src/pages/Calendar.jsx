@@ -665,6 +665,7 @@ export default function Calendar() {
                     {task.due_time && (
                       <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                         {format(new Date(`${task.due_date}T${task.due_time}`), 'h:mm a')}
+                        {task.end_time ? ' → ' + format(new Date(`${task.due_date}T${task.end_time}`), 'h:mm a') : ''}
                       </span>
                     )}
                     <span className={`text-xs px-1.5 py-0.5 rounded font-medium badge-${task.priority}`}>

@@ -227,7 +227,13 @@ export default function Tasks() {
 
   const tasks   = useTasks(userId, filter)
   const pending = tasks.filter(t => t.status === 'pending')
-    .sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority])
+    .sort((a, b) => {
+      // Sort by time first, then priority
+      if (a.due_time && b.due_time) return a.due_time.localeCompare(b.due_time)
+      if (a.due_time) return -1
+      if (b.due_time) return 1
+      return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
+    })
   const done    = tasks.filter(t => t.status === 'done')
 
   const FILTERS = [

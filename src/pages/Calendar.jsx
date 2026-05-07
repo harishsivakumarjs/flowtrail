@@ -392,6 +392,12 @@ function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onIt
   const isTodayDay     = isToday(day)
   const dateStr        = format(day, 'yyyy-MM-dd')
   const dayTasks       = tasks.filter(t => t.due_date === dateStr)
+    .sort((a, b) => {
+      if (a.due_time && b.due_time) return a.due_time.localeCompare(b.due_time)
+      if (a.due_time) return -1
+      if (b.due_time) return 1
+      return 0
+    })
   const dayGEvents     = googleEvents.filter(e => e.start?.startsWith(dateStr))
 
   return (

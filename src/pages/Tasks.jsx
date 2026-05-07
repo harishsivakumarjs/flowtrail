@@ -3,6 +3,7 @@ import { Plus, Trash2, Calendar, Clock, AlertTriangle } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import { useTasks, addTask, toggleTask, deleteTask } from '@/hooks/useTasks'
 import Modal from '@/components/ui/Modal'
+import TimeInput from '@/components/ui/TimeInput'
 import { TODAY } from '@/lib/utils'
 import { format, isAfter, parseISO, addDays } from 'date-fns'
 
@@ -53,7 +54,7 @@ function AddTaskModal({ open, onClose, userId }) {
           <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
             Time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional — get notified 30 min before)</span>
           </label>
-          <input type="time" className="input-base" value={dueTime} onChange={e => setDueTime(e.target.value)} />
+          <TimeInput value={dueTime} onChange={setDueTime} />
         </div>
 
         <div>

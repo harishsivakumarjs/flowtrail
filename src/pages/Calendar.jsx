@@ -14,6 +14,7 @@ import {
 } from '@/lib/googleCalendar'
 import { requestNotificationPermission } from '@/lib/notifications'
 import Modal from '@/components/ui/Modal'
+import TimeInput from '@/components/ui/TimeInput'
 import { addTask, toggleTask, deleteTask, updateTask, scheduleTaskNotification } from '@/hooks/useTasks'
 import { TODAY } from '@/lib/utils'
 
@@ -134,7 +135,7 @@ function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefres
             <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
               Time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span>
             </label>
-            <input type="time" className="input-base" value={time} onChange={e => setTime(e.target.value)} />
+            <TimeInput value={time} onChange={setTime} />
           </div>
         </div>
 
@@ -253,8 +254,7 @@ function DetailModal({ item, open, onClose, userId, onEdit, onDelete, onComplete
               </div>
               <div>
                 <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Time (optional)</label>
-                <input type="time" className="input-base text-sm" value={newTime}
-                  onChange={e => setNewTime(e.target.value)} />
+                <TimeInput value={newTime} onChange={setNewTime} />
               </div>
             </div>
             <div className="flex gap-2">

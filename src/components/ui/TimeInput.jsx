@@ -1,20 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 import { ChevronUp, ChevronDown } from 'lucide-react'
 
-/**
- * TimeInput — supports both typing and scroll/click to change hours and minutes
- * Value format: "HH:MM" (24-hour) or "" for empty
- */
-export default function TimeInput({ value, onChange, placeholder = 'HH:MM' }) {
-  const [hours, setHours]     = useState('')
-  const [minutes, setMinutes] = useState('')
-  const [period, setPeriod]   = useState('AM')
-  const hoursRef   = useRef(null)
+export default function TimeInput({ value, onChange }) {
+  const [hours, setHours]   = useState('12')
+  const [minutes, setMinutes] = useState('00')
+  const [period, setPeriod]  = useState('AM')
   const minutesRef = useRef(null)
 
-  // Parse incoming value (24h "HH:MM") → 12h display
   useEffect(() => {
-    if (!value) { setHours(''); setMinutes(''); setPeriod('AM'); return }
+    if (!value) { setHours('12'); setMinutes('00'); setPeriod('AM'); return }
     const [h, m] = value.split(':').map(Number)
     if (isNaN(h) || isNaN(m)) return
     const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
@@ -24,140 +18,111 @@ export default function TimeInput({ value, onChange, placeholder = 'HH:MM' }) {
   }, [value])
 
   const emit = (h, m, p) => {
-    if (!h || !m) { onChange(''); return }
     let h24 = parseInt(h)
     if (p === 'AM' && h24 === 12) h24 = 0
     if (p === 'PM' && h24 !== 12) h24 += 12
     onChange(`${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
   }
 
-  const adjustHours = (dir) => {
+  const adjH = (d) => {
     const cur = parseInt(hours) || 12
-    const next = dir > 0 ? (cur % 12) + 1 : cur === 1 ? 12 : cur - 1
+    const next = d > 0 ? (cur % 12) + 1 : cur === 1 ? 12 : cur - 1
     const ns = String(next).padStart(2, '0')
-    setHours(ns)
-    emit(ns, minutes || '00', period)
+    setHours(ns); emit(ns, minutes, period)
   }
 
-  const adjustMinutes = (dir) => {
+  const adjM = (d) => {
     const cur = parseInt(minutes) || 0
-    const next = ((cur + dir * 5) + 60) % 60
+    const next = ((cur + d * 5) + 60) % 60
     const ns = String(next).padStart(2, '0')
-    setMinutes(ns)
-    emit(hours || '12', ns, period)
+    setMinutes(ns); emit(hours, ns, period)
   }
 
-  const togglePeriod = () => {
+  const togP = () => {
     const np = period === 'AM' ? 'PM' : 'AM'
-    setPeriod(np)
-    emit(hours || '12', minutes || '00', np)
+    setPeriod(np); emit(hours, minutes, np)
   }
 
-  const handleHoursChange = (e) => {
+  const onHChange = (e) => {
     const v = e.target.value.replace(/\D/g, '').slice(-2)
+    setHours(v)
     const n = parseInt(v)
-    if (v === '') { setHours(''); return }
     if (n >= 1 && n <= 12) {
-      const ns = String(n).padStart(2, '0')
-      setHours(ns)
-      emit(ns, minutes || '00', period)
+      emit(String(n).padStart(2, '0'), minutes, period)
       if (v.length === 2) minutesRef.current?.select()
     }
   }
 
-  const handleMinutesChange = (e) => {
+  const onMChange = (e) => {
     const v = e.target.value.replace(/\D/g, '').slice(-2)
+    setMinutes(v)
     const n = parseInt(v)
-    if (v === '') { setMinutes(''); return }
-    if (n >= 0 && n <= 59) {
-      const ns = String(n).padStart(2, '0')
-      setMinutes(ns)
-      emit(hours || '12', ns, period)
+    if (!isNaN(n) && n >= 0 && n <= 59) {
+      emit(hours, String(n).padStart(2, '0'), period)
     }
   }
 
-  const handleScroll = (type, e) => {
-    e.preventDefault()
-    const dir = e.deltaY < 0 ? 1 : -1
-    if (type === 'h') adjustHours(dir)
-    else adjustMinutes(dir)
-  }
+  const btn = (fn) => (
+    <button type="button" onClick={fn}
+      className="p-0.5 rounded hover:bg-[var(--bg-raised)] transition-colors"
+      style={{ color: 'var(--text-muted)', lineHeight: 1 }}>
+    </button>
+  )
 
-  const inputStyle = {
-    width: 40, background: 'transparent', border: 'none', outline: 'none',
-    textAlign: 'center', fontSize: 22, fontWeight: 600,
-    color: 'var(--text-primary)', fontFamily: 'inherit',
+  const numStyle = {
+    width: 28, background: 'transparent', border: 'none', outline: 'none',
+    textAlign: 'center', fontSize: 15, fontWeight: 600,
+    color: 'var(--text-primary)', fontFamily: 'inherit', padding: 0,
   }
-
-  const chevronBtn = (onClick) => ({
-    onClick,
-    className: 'p-1 rounded-lg hover:bg-[var(--bg-overlay)] transition-colors cursor-pointer',
-    style: { color: 'var(--text-muted)', display: 'flex' }
-  })
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="flex items-center gap-1 px-4 py-3 rounded-2xl"
+    <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl"
         style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border)' }}>
 
         {/* Hours */}
         <div className="flex flex-col items-center">
-          <button {...chevronBtn(() => adjustHours(1))}><ChevronUp size={18} /></button>
-          <input
-            ref={hoursRef}
-            style={inputStyle}
-            value={hours}
-            onChange={handleHoursChange}
-            onWheel={(e) => handleScroll('h', e)}
-            onFocus={e => e.target.select()}
-            placeholder="12"
-            maxLength={2}
-          />
-          <button {...chevronBtn(() => adjustHours(-1))}><ChevronDown size={18} /></button>
+          <button type="button" onClick={() => adjH(1)} className="p-0.5 rounded hover:bg-[var(--bg-raised)]" style={{ color: 'var(--text-muted)', lineHeight:1 }}>
+            <ChevronUp size={12} />
+          </button>
+          <input style={numStyle} value={hours} onChange={onHChange}
+            onFocus={e => e.target.select()} maxLength={2} />
+          <button type="button" onClick={() => adjH(-1)} className="p-0.5 rounded hover:bg-[var(--bg-raised)]" style={{ color: 'var(--text-muted)', lineHeight:1 }}>
+            <ChevronDown size={12} />
+          </button>
         </div>
 
-        <span className="text-2xl font-bold mb-0.5" style={{ color: 'var(--text-primary)' }}>:</span>
+        <span className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>:</span>
 
         {/* Minutes */}
         <div className="flex flex-col items-center">
-          <button {...chevronBtn(() => adjustMinutes(1))}><ChevronUp size={18} /></button>
-          <input
-            ref={minutesRef}
-            style={inputStyle}
-            value={minutes}
-            onChange={handleMinutesChange}
-            onWheel={(e) => handleScroll('m', e)}
-            onFocus={e => e.target.select()}
-            placeholder="00"
-            maxLength={2}
-          />
-          <button {...chevronBtn(() => adjustMinutes(-1))}><ChevronDown size={18} /></button>
+          <button type="button" onClick={() => adjM(1)} className="p-0.5 rounded hover:bg-[var(--bg-raised)]" style={{ color: 'var(--text-muted)', lineHeight:1 }}>
+            <ChevronUp size={12} />
+          </button>
+          <input ref={minutesRef} style={numStyle} value={minutes} onChange={onMChange}
+            onFocus={e => e.target.select()} maxLength={2} />
+          <button type="button" onClick={() => adjM(-1)} className="p-0.5 rounded hover:bg-[var(--bg-raised)]" style={{ color: 'var(--text-muted)', lineHeight:1 }}>
+            <ChevronDown size={12} />
+          </button>
         </div>
 
         {/* AM/PM */}
-        <div className="flex flex-col items-center ml-2 gap-1">
-          <button
-            onClick={() => { if (period !== 'AM') togglePeriod() }}
-            className="px-2 py-1 rounded-lg text-xs font-semibold transition-all"
-            style={{
-              background: period === 'AM' ? 'var(--brand)' : 'transparent',
-              color: period === 'AM' ? '#fff' : 'var(--text-muted)',
-            }}>AM</button>
-          <button
-            onClick={() => { if (period !== 'PM') togglePeriod() }}
-            className="px-2 py-1 rounded-lg text-xs font-semibold transition-all"
-            style={{
-              background: period === 'PM' ? 'var(--brand)' : 'transparent',
-              color: period === 'PM' ? '#fff' : 'var(--text-muted)',
-            }}>PM</button>
+        <div className="flex flex-col gap-0.5 ml-1">
+          {['AM','PM'].map(p => (
+            <button key={p} type="button" onClick={() => { setPeriod(p); emit(hours, minutes, p) }}
+              className="px-1.5 py-0.5 rounded text-xs font-semibold transition-all"
+              style={{
+                background: period === p ? 'var(--brand)' : 'transparent',
+                color: period === p ? '#fff' : 'var(--text-muted)',
+                fontSize: 10,
+              }}>{p}</button>
+          ))}
         </div>
       </div>
 
       {value && (
-        <button onClick={() => { setHours(''); setMinutes(''); setPeriod('AM'); onChange('') }}
-          className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-          Clear time
-        </button>
+        <button type="button" onClick={() => { setHours('12'); setMinutes('00'); setPeriod('AM'); onChange('') }}
+          className="text-xs" style={{ color: 'var(--text-muted)' }}>✕</button>
       )}
     </div>
   )

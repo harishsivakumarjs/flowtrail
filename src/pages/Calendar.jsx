@@ -126,7 +126,7 @@ function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefres
           onChange={e => setTitle(e.target.value)} autoFocus
           onKeyDown={e => e.key === 'Enter' && handleSave()} />
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-3">
           <div>
             <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>Date</label>
             <input type="date" className="input-base" value={date} onChange={e => setDate(e.target.value)} />

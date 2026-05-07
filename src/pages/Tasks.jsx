@@ -1,37 +1,45 @@
 import { useState } from 'react'
-import { Plus, Trash2, Calendar, Clock, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, Calendar, Clock, AlertTriangle, Edit2, CalendarClock } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
-import { useTasks, addTask, toggleTask, deleteTask } from '@/hooks/useTasks'
+import { useTasks, addTask, toggleTask, deleteTask, updateTask } from '@/hooks/useTasks'
 import Modal from '@/components/ui/Modal'
 import TimeInput from '@/components/ui/TimeInput'
 import { TODAY } from '@/lib/utils'
-import { format, isAfter, parseISO, addDays } from 'date-fns'
+import { format, addDays } from 'date-fns'
 
 const PRIORITIES = ['high', 'medium', 'low']
 const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 }
 
-// ── Add Task Modal ────────────────────────────────────────────
-function AddTaskModal({ open, onClose, userId }) {
-  const [title, setTitle]       = useState('')
-  const [priority, setPriority] = useState('medium')
-  const [dueDate, setDueDate]   = useState(TODAY())
-  const [dueTime, setDueTime]   = useState('')
-  const [endTime, setEndTime]   = useState('')
-  const [notes, setNotes]       = useState('')
+// ── Add / Edit Task Modal ─────────────────────────────────────
+function TaskModal({ open, onClose, userId, editing = null }) {
+  const [title, setTitle]       = useState(editing?.title || '')
+  const [priority, setPriority] = useState(editing?.priority || 'medium')
+  const [dueDate, setDueDate]   = useState(editing?.due_date || TODAY())
+  const [dueTime, setDueTime]   = useState(editing?.due_time || '')
+  const [endTime, setEndTime]   = useState(editing?.end_time || '')
+  const [notes, setNotes]       = useState(editing?.notes || '')
   const [saving, setSaving]     = useState(false)
 
   const handleSave = async () => {
     if (!title.trim()) return
     setSaving(true)
-    await addTask({ title: title.trim(), priority, dueDate, dueTime: dueTime || null, endTime: endTime || null, notes, userId })
-    setTitle(''); setNotes(''); setPriority('medium')
-    setDueDate(TODAY()); setDueTime(''); setEndTime('')
+    if (editing) {
+      await updateTask(editing.id, {
+        title: title.trim(), priority,
+        due_date: dueDate,
+        due_time: dueTime || null,
+        end_time: endTime || null,
+        notes
+      })
+    } else {
+      await addTask({ title: title.trim(), priority, dueDate, dueTime: dueTime || null, endTime: endTime || null, notes, userId })
+    }
     setSaving(false)
     onClose()
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="New task">
+    <Modal open={open} onClose={onClose} title={editing ? 'Edit task' : 'New task'}>
       <div className="space-y-4">
         <input className="input-base" placeholder="What needs to be done?"
           value={title} onChange={e => setTitle(e.target.value)}
@@ -50,7 +58,6 @@ function AddTaskModal({ open, onClose, userId }) {
           </div>
         </div>
 
-        {/* Time field */}
         <div>
           <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
             Time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional — notified 30 min before)</span>
@@ -77,7 +84,64 @@ function AddTaskModal({ open, onClose, userId }) {
         <div className="flex gap-2">
           <button className="btn btn-ghost flex-1" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary flex-1" onClick={handleSave} disabled={saving}>
-            {saving ? 'Adding…' : 'Add task'}
+            {saving ? 'Saving…' : editing ? 'Save changes' : 'Add task'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Reschedule Modal ─────────────────────────────────────────
+function RescheduleModal({ open, onClose, task }) {
+  const [newDate, setNewDate] = useState(task?.due_date || TODAY())
+  const [newTime, setNewTime] = useState(task?.due_time || '')
+  const [saving, setSaving]   = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    await updateTask(task.id, { due_date: newDate, due_time: newTime || null })
+    setSaving(false)
+    onClose()
+  }
+
+  if (!task) return null
+  return (
+    <Modal open={open} onClose={onClose} title="Reschedule task" size="sm">
+      <div className="space-y-4">
+        <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{task.title}</p>
+        <div>
+          <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>New date</label>
+          <input type="date" className="input-base" value={newDate} onChange={e => setNewDate(e.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>New time (optional)</label>
+          <TimeInput value={newTime} onChange={setNewTime} />
+        </div>
+
+        {/* Quick options */}
+        <div className="flex gap-2 flex-wrap">
+          {[
+            { label: 'Tomorrow', date: format(addDays(new Date(), 1), 'yyyy-MM-dd') },
+            { label: 'In 2 days', date: format(addDays(new Date(), 2), 'yyyy-MM-dd') },
+            { label: 'Next week', date: format(addDays(new Date(), 7), 'yyyy-MM-dd') },
+          ].map(opt => (
+            <button key={opt.label} onClick={() => setNewDate(opt.date)}
+              className="text-xs px-3 py-1.5 rounded-xl border transition-all"
+              style={{
+                borderColor: newDate === opt.date ? 'var(--brand)' : 'var(--border)',
+                color: newDate === opt.date ? 'var(--brand)' : 'var(--text-muted)',
+                background: 'transparent'
+              }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-2">
+          <button className="btn btn-ghost flex-1" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary flex-1" onClick={handleSave} disabled={saving}>
+            {saving ? 'Moving…' : 'Move task'}
           </button>
         </div>
       </div>
@@ -88,10 +152,7 @@ function AddTaskModal({ open, onClose, userId }) {
 // ── Future task warning modal ─────────────────────────────────
 function FutureTaskModal({ open, onClose, task, onConfirmComplete, onConfirmDelete }) {
   if (!task) return null
-  const dateStr = task.due_date
-    ? format(new Date(task.due_date + 'T00:00'), 'EEEE, MMM d')
-    : ''
-
+  const dateStr = task.due_date ? format(new Date(task.due_date + 'T00:00'), 'EEEE, MMM d') : ''
   return (
     <Modal open={open} onClose={onClose} title="Future task" size="sm">
       <div className="space-y-4">
@@ -102,17 +163,10 @@ function FutureTaskModal({ open, onClose, task, onConfirmComplete, onConfirmDele
             "<strong>{task.title}</strong>" is scheduled for <strong>{dateStr}</strong>. What would you like to do?
           </p>
         </div>
-
         <div className="space-y-2">
-          <button className="btn btn-primary w-full" onClick={onConfirmComplete}>
-            ✓ Mark as complete anyway
-          </button>
-          <button className="btn btn-danger w-full" onClick={onConfirmDelete}>
-            <Trash2 size={14} /> Delete this task
-          </button>
-          <button className="btn btn-ghost w-full" onClick={onClose}>
-            Keep it — I'll do it later
-          </button>
+          <button className="btn btn-primary w-full" onClick={onConfirmComplete}>✓ Mark as complete anyway</button>
+          <button className="btn btn-danger w-full" onClick={onConfirmDelete}><Trash2 size={14} /> Delete this task</button>
+          <button className="btn btn-ghost w-full" onClick={onClose}>Keep it — I'll do it later</button>
         </div>
       </div>
     </Modal>
@@ -120,20 +174,11 @@ function FutureTaskModal({ open, onClose, task, onConfirmComplete, onConfirmDele
 }
 
 // ── Task item ─────────────────────────────────────────────────
-function TaskItem({ task, onFutureClick }) {
-  const done    = task.status === 'done'
-  const today   = TODAY()
+function TaskItem({ task, onFutureClick, onEdit, onReschedule }) {
+  const done     = task.status === 'done'
+  const today    = TODAY()
   const isFuture = task.due_date && task.due_date > today
 
-  const handleCheck = () => {
-    if (!done && isFuture) {
-      onFutureClick(task)
-    } else {
-      toggleTask(task.id)
-    }
-  }
-
-  // Relative day label
   const dayLabel = () => {
     if (!task.due_date) return null
     const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd')
@@ -145,8 +190,13 @@ function TaskItem({ task, onFutureClick }) {
   const day = dayLabel()
 
   return (
-    <div className={`flex items-start gap-3 p-3 rounded-xl transition-all group card-hover card mb-2 ${done ? 'opacity-50' : ''}`}>
-      <button onClick={handleCheck}
+    <div className={`flex items-start gap-3 p-3 rounded-xl transition-all group card mb-2 ${done ? 'opacity-50' : ''}`}>
+      {/* Checkbox — only action is complete */}
+      <button
+        onClick={() => {
+          if (!done && isFuture) onFutureClick(task)
+          else toggleTask(task.id)
+        }}
         className={`w-5 h-5 rounded border-2 flex-shrink-0 mt-0.5 flex items-center justify-center transition-all
           ${done ? 'border-[var(--green)] bg-[var(--green)]' : 'border-[var(--border-mid)] hover:border-[var(--brand)]'}`}>
         {done && (
@@ -156,6 +206,7 @@ function TaskItem({ task, onFutureClick }) {
         )}
       </button>
 
+      {/* Content */}
       <div className="flex-1 min-w-0">
         <p className={`text-sm font-medium ${done ? 'line-through' : ''}`} style={{ color: 'var(--text-primary)' }}>
           {task.title}
@@ -166,26 +217,39 @@ function TaskItem({ task, onFutureClick }) {
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           {day && (
             <div className="flex items-center gap-1 text-xs" style={{ color: day.color }}>
-              <Calendar size={11} />
-              <span>{day.label}</span>
+              <Calendar size={11} /><span>{day.label}</span>
             </div>
           )}
           {task.due_time && (
             <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
               <Clock size={11} />
-              <span>{format(new Date(`${task.due_date || today}T${task.due_time}`), 'h:mm a')}{task.end_time ? ' → ' + format(new Date(`${task.due_date || today}T${task.end_time}`), 'h:mm a') : ''}</span>
+              <span>
+                {format(new Date(`${task.due_date || today}T${task.due_time}`), 'h:mm a')}
+                {task.end_time ? ' → ' + format(new Date(`${task.due_date || today}T${task.end_time}`), 'h:mm a') : ''}
+              </span>
             </div>
           )}
         </div>
       </div>
 
-      <div className="flex items-center gap-2 flex-shrink-0">
+      {/* Actions */}
+      <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
         <span className={`text-xs px-2 py-0.5 rounded-md font-medium badge-${task.priority}`}>
           {task.priority}
         </span>
+        <button onClick={() => onEdit(task)}
+          className="p-1.5 rounded-lg hover:bg-[var(--bg-overlay)]"
+          style={{ color: 'var(--text-muted)' }} title="Edit">
+          <Edit2 size={13} />
+        </button>
+        <button onClick={() => onReschedule(task)}
+          className="p-1.5 rounded-lg hover:bg-[var(--bg-overlay)]"
+          style={{ color: 'var(--text-muted)' }} title="Reschedule">
+          <CalendarClock size={13} />
+        </button>
         <button onClick={() => deleteTask(task.id)}
-          className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-[var(--bg-overlay)] transition-all"
-          style={{ color: 'var(--text-muted)' }}>
+          className="p-1.5 rounded-lg hover:bg-[var(--bg-overlay)]"
+          style={{ color: 'var(--text-muted)' }} title="Delete">
           <Trash2 size={13} />
         </button>
       </div>
@@ -198,13 +262,13 @@ function groupByDate(tasks) {
   const groups = {}
   const today    = TODAY()
   const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd')
-
-  // Sort by date then priority
-  const sorted = [...tasks].sort((a, b) => {
+  const sorted   = [...tasks].sort((a, b) => {
     if (a.due_date !== b.due_date) return (a.due_date || '').localeCompare(b.due_date || '')
+    if (a.due_time && b.due_time) return a.due_time.localeCompare(b.due_time)
+    if (a.due_time) return -1
+    if (b.due_time) return 1
     return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
   })
-
   sorted.forEach(task => {
     const d = task.due_date || 'No date'
     let label = d
@@ -221,36 +285,27 @@ function groupByDate(tasks) {
 export default function Tasks() {
   const { user } = useAppStore()
   const userId   = user?.id
-  const [showAdd, setShowAdd]         = useState(false)
-  const [filter, setFilter]           = useState('today')
-  const [futureTask, setFutureTask]   = useState(null)
+  const [showAdd, setShowAdd]           = useState(false)
+  const [editingTask, setEditingTask]   = useState(null)
+  const [rescheduleTask, setReschedule] = useState(null)
+  const [filter, setFilter]             = useState('today')
+  const [futureTask, setFutureTask]     = useState(null)
 
   const tasks   = useTasks(userId, filter)
   const pending = tasks.filter(t => t.status === 'pending')
     .sort((a, b) => {
-      // Sort by time first, then priority
       if (a.due_time && b.due_time) return a.due_time.localeCompare(b.due_time)
       if (a.due_time) return -1
       if (b.due_time) return 1
       return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
     })
-  const done    = tasks.filter(t => t.status === 'done')
+  const done = tasks.filter(t => t.status === 'done')
 
   const FILTERS = [
     { key: 'today',    label: 'Today' },
     { key: 'upcoming', label: 'Upcoming' },
     { key: 'all',      label: 'All pending' },
   ]
-
-  const handleFutureConfirmComplete = async () => {
-    await toggleTask(futureTask.id)
-    setFutureTask(null)
-  }
-
-  const handleFutureConfirmDelete = async () => {
-    await deleteTask(futureTask.id)
-    setFutureTask(null)
-  }
 
   const grouped = filter === 'upcoming' ? groupByDate(pending) : null
 
@@ -261,7 +316,7 @@ export default function Tasks() {
           <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Tasks</h1>
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{pending.length} remaining</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+        <button className="btn btn-primary" onClick={() => { setEditingTask(null); setShowAdd(true) }}>
           <Plus size={15} /> Add task
         </button>
       </div>
@@ -277,7 +332,6 @@ export default function Tasks() {
         ))}
       </div>
 
-      {/* Empty state */}
       {pending.length === 0 && done.length === 0 && (
         <div className="text-center py-16">
           <p className="text-sm mb-3" style={{ color: 'var(--text-muted)' }}>No tasks here</p>
@@ -287,7 +341,6 @@ export default function Tasks() {
         </div>
       )}
 
-      {/* Grouped upcoming view */}
       {grouped ? (
         Object.entries(grouped).map(([dateLabel, dateTasks]) => (
           <div key={dateLabel} className="mb-5">
@@ -300,32 +353,54 @@ export default function Tasks() {
               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{dateTasks.length} task{dateTasks.length !== 1 ? 's' : ''}</span>
             </div>
             {dateTasks.map(task => (
-              <TaskItem key={task.id} task={task} onFutureClick={setFutureTask} />
+              <TaskItem key={task.id} task={task}
+                onFutureClick={setFutureTask}
+                onEdit={(t) => { setEditingTask(t); setShowAdd(true) }}
+                onReschedule={setReschedule} />
             ))}
           </div>
         ))
       ) : (
-        pending.map(task => <TaskItem key={task.id} task={task} onFutureClick={setFutureTask} />)
+        pending.map(task => (
+          <TaskItem key={task.id} task={task}
+            onFutureClick={setFutureTask}
+            onEdit={(t) => { setEditingTask(t); setShowAdd(true) }}
+            onReschedule={setReschedule} />
+        ))
       )}
 
-      {/* Done section */}
       {done.length > 0 && (
         <div className="mt-4">
           <p className="text-xs font-medium mb-2 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
             Completed ({done.length})
           </p>
-          {done.map(task => <TaskItem key={task.id} task={task} onFutureClick={setFutureTask} />)}
+          {done.map(task => (
+            <TaskItem key={task.id} task={task}
+              onFutureClick={setFutureTask}
+              onEdit={(t) => { setEditingTask(t); setShowAdd(true) }}
+              onReschedule={setReschedule} />
+          ))}
         </div>
       )}
 
-      <AddTaskModal open={showAdd} onClose={() => setShowAdd(false)} userId={userId} />
-
+      {/* Modals */}
+      <TaskModal
+        open={showAdd}
+        onClose={() => { setShowAdd(false); setEditingTask(null) }}
+        userId={userId}
+        editing={editingTask}
+      />
+      <RescheduleModal
+        open={!!rescheduleTask}
+        onClose={() => setReschedule(null)}
+        task={rescheduleTask}
+      />
       <FutureTaskModal
         open={!!futureTask}
         onClose={() => setFutureTask(null)}
         task={futureTask}
-        onConfirmComplete={handleFutureConfirmComplete}
-        onConfirmDelete={handleFutureConfirmDelete}
+        onConfirmComplete={async () => { await toggleTask(futureTask.id); setFutureTask(null) }}
+        onConfirmDelete={async () => { await deleteTask(futureTask.id); setFutureTask(null) }}
       />
     </div>
   )

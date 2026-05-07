@@ -172,7 +172,19 @@ function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefres
 }
 
 // ── Detail Modal ──────────────────────────────────────────────
-function DetailModal({ item, open, onClose, userId, onEdit, onDelete, onComplete }) {
+function DetailModal({ item, open, onClose, userId, onEdit, onDelete, onComplete, onReschedule }) {
+  const [showReschedule, setShowReschedule] = useState(false)
+  const [newDate, setNewDate] = useState('')
+  const [newTime, setNewTime] = useState('')
+
+  useEffect(() => {
+    if (open && item) {
+      setNewDate(item.due_date || TODAY())
+      setNewTime(item.due_time || '')
+      setShowReschedule(false)
+    }
+  }, [open, item?.id])
+
   if (!item) return null
   const isGoogle = item.source === 'google'
   const isTask   = item.source === 'task'
@@ -188,6 +200,13 @@ function DetailModal({ item, open, onClose, userId, onEdit, onDelete, onComplete
     : item.due_date
       ? `${format(new Date(item.due_date + 'T00:00'), 'MMM d, yyyy')}${item.due_time ? ' · ' + format(new Date(`${item.due_date}T${item.due_time}`), 'h:mm a') : ''}`
       : null
+
+  const handleReschedule = async () => {
+    if (!newDate) return
+    await onReschedule(item, newDate, newTime || null)
+    setShowReschedule(false)
+    onClose()
+  }
 
   return (
     <Modal open={open} onClose={onClose} title={isGoogle ? 'Google event' : 'Task'} size="sm">
@@ -222,11 +241,42 @@ function DetailModal({ item, open, onClose, userId, onEdit, onDelete, onComplete
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{item.desc || item.notes}</p>
         )}
 
+        {/* Reschedule panel */}
+        {isTask && showReschedule && (
+          <div className="space-y-3 p-3 rounded-xl" style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border)' }}>
+            <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Move to new date & time</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Date</label>
+                <input type="date" className="input-base text-sm" value={newDate}
+                  onChange={e => setNewDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--text-muted)' }}>Time (optional)</label>
+                <input type="time" className="input-base text-sm" value={newTime}
+                  onChange={e => setNewTime(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button className="btn btn-ghost flex-1 text-sm" onClick={() => setShowReschedule(false)}>Cancel</button>
+              <button className="btn btn-primary flex-1 text-sm" onClick={handleReschedule}>
+                Move task
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-2 flex-wrap">
           {isTask && item.status !== 'done' && (
             <button onClick={() => onComplete(item)}
               className="btn btn-primary flex-1 gap-1.5 text-sm">
               <CheckCircle size={14} /> Mark complete
+            </button>
+          )}
+          {isTask && item.status !== 'done' && !showReschedule && (
+            <button onClick={() => setShowReschedule(true)}
+              className="btn btn-ghost flex-1 gap-1.5 text-sm">
+              📅 Reschedule
             </button>
           )}
           {isGoogle && (
@@ -334,7 +384,7 @@ function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onIt
     <div
       onClick={() => onDayClick(dateStr)}
       onDoubleClick={(e) => { e.stopPropagation(); onDayClick(dateStr, true) }}
-      className={`min-h-[80px] md:min-h-[100px] p-1.5 border-b border-r flex flex-col cursor-pointer
+      className={`min-h-[90px] md:min-h-[110px] p-1.5 border-b border-r flex flex-col cursor-pointer
         hover:bg-[var(--bg-overlay)] transition-colors
         ${!isCurrentMonth ? 'opacity-30' : ''}
         ${isTodayDay ? 'bg-[color-mix(in_srgb,var(--brand)_5%,transparent)]' : ''}`}
@@ -355,7 +405,7 @@ function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onIt
         </div>
       )}
 
-      {dayTasks.slice(0, 1).map(task => (
+      {dayTasks.slice(0, 3).map(task => (
         <div key={task.id}
           onClick={e => { e.stopPropagation(); onItemClick({ ...task, source: 'task' }) }}
           className="text-xs px-1.5 py-0.5 rounded mb-0.5 truncate cursor-pointer hover:opacity-80"
@@ -373,7 +423,7 @@ function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onIt
         </div>
       ))}
 
-      {dayGEvents.slice(0, 2).map(event => {
+      {dayGEvents.slice(0, 3).map(event => {
         const t = event.start?.includes('T') ? format(new Date(event.start), 'h:mma') : null
         return (
           <div key={event.id}
@@ -385,7 +435,7 @@ function DayCell({ day, month, tasks, habitCount, habitTotal, googleEvents, onIt
         )
       })}
 
-      {(dayTasks.length + dayGEvents.length) > 3 && (
+      {(dayTasks.length + dayGEvents.length) > 6 && (
         <div className="text-xs" style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
           +{dayTasks.length + dayGEvents.length - 3} more
         </div>
@@ -446,6 +496,11 @@ export default function Calendar() {
     setLoading(false)
   }
 
+
+  const handleReschedule = async (item, newDate, newTime) => {
+    await updateTask(item.id, { due_date: newDate, due_time: newTime || null })
+    setSelectedItem(null)
+  }
 
   const handleComplete = async (item) => {
     await toggleTask(item.id)
@@ -648,7 +703,7 @@ export default function Calendar() {
 
       <DetailModal item={selectedItem} open={!!selectedItem}
         onClose={() => setSelectedItem(null)} userId={userId}
-        onEdit={handleEdit} onDelete={handleDelete} onComplete={handleComplete} />
+        onEdit={handleEdit} onDelete={handleDelete} onComplete={handleComplete} onReschedule={handleReschedule} />
 
       <AddEventModal open={showAdd}
         onClose={() => { setShowAdd(false); setEditingItem(null) }}

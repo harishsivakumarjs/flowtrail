@@ -44,7 +44,7 @@ export async function syncToCloud(userId) {
   }
 }
 
-/** Pull from Supabase into local */
+/** Pull from Supabase into local — Supabase is source of truth */
 export async function syncFromCloud(userId) {
   if (!supabase || !navigator.onLine) return
   for (const table of TABLES) {
@@ -52,9 +52,22 @@ export async function syncFromCloud(userId) {
       const { data, error } = await supabase
         .from(table).select('*').eq('user_id', userId)
       if (error) { console.error(`syncFromCloud [${table}]:`, error); continue }
-      if (!data?.length) continue
-      const filtered = data.filter(r => !deletedIds.has(r.id))
-      if (filtered.length) await db[table].bulkPut(filtered)
+
+      // Get current local IDs
+      const localIds = await db[table]
+        .where('user_id').equals(userId)
+        .primaryKeys()
+
+      // Cloud IDs (excluding ones we've deleted locally)
+      const cloudIds = new Set((data || []).map(r => r.id))
+
+      // Delete local records that no longer exist in cloud
+      const toDelete = localIds.filter(id => !cloudIds.has(id) && !deletedIds.has(id))
+      if (toDelete.length) await db[table].bulkDelete(toDelete)
+
+      // Upsert cloud records (skip ones we've deleted locally)
+      const toUpsert = (data || []).filter(r => !deletedIds.has(r.id))
+      if (toUpsert.length) await db[table].bulkPut(toUpsert)
     } catch (err) {
       console.error(`syncFromCloud [${table}]:`, err)
     }

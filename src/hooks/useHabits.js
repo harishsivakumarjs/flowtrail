@@ -1,76 +1,105 @@
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db, uuid } from '@/lib/db'
+import { useState, useEffect, useCallback } from 'react'
+import { supabase } from '@/lib/supabase'
+import { uuid } from '@/lib/db'
 import { TODAY, fmt } from '@/lib/utils'
-import { upsertToCloud, deleteFromCloud, markLocalWrite } from '@/lib/sync'
+import { subDays, format } from 'date-fns'
 import { useGamificationStore } from '@/store/gamificationStore'
 import { pushGamification } from '@/lib/gamificationSync'
-import { subDays } from 'date-fns'
 
 export function useHabits(userId) {
-  return useLiveQuery(
-    () => userId
-      ? db.habits.where('user_id').equals(userId).filter(h => !h.archived).sortBy('sort_order')
-      : Promise.resolve([]),
-    [userId]
-  ) ?? []
+  const [habits, setHabits] = useState([])
+  const fetch = useCallback(async () => {
+    if (!userId || !supabase) return
+    const { data } = await supabase.from('habits').select('*')
+      .eq('user_id', userId).eq('archived', false).order('sort_order')
+    if (data) setHabits(data)
+  }, [userId])
+
+  useEffect(() => {
+    fetch()
+    if (!supabase || !userId) return
+    const sub = supabase.channel(`habits_${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'habits', filter: `user_id=eq.${userId}` }, fetch)
+      .subscribe()
+    return () => supabase.removeChannel(sub)
+  }, [userId, fetch])
+  return habits
 }
 
 export function useTodayLogs(userId) {
+  const [logs, setLogs] = useState([])
   const today = TODAY()
-  return useLiveQuery(
-    () => userId
-      ? db.habit_logs.where('user_id').equals(userId).filter(l => l.log_date === today).toArray()
-      : Promise.resolve([]),
-    [userId, today]
-  ) ?? []
+  const fetch = useCallback(async () => {
+    if (!userId || !supabase) return
+    const { data } = await supabase.from('habit_logs').select('*')
+      .eq('user_id', userId).eq('log_date', today)
+    if (data) setLogs(data)
+  }, [userId, today])
+
+  useEffect(() => {
+    fetch()
+    if (!supabase || !userId) return
+    const sub = supabase.channel(`habit_logs_today_${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'habit_logs', filter: `user_id=eq.${userId}` }, fetch)
+      .subscribe()
+    return () => supabase.removeChannel(sub)
+  }, [userId, fetch])
+  return logs
 }
 
 export function useHabitLogs(userId, month, year) {
+  const [logs, setLogs] = useState([])
   const start = `${year}-${String(month).padStart(2,'0')}-01`
   const end   = `${year}-${String(month).padStart(2,'0')}-31`
-  return useLiveQuery(
-    () => userId
-      ? db.habit_logs.where('user_id').equals(userId)
-          .filter(l => l.log_date >= start && l.log_date <= end).toArray()
-      : Promise.resolve([]),
-    [userId, month, year]
-  ) ?? []
+  const fetch = useCallback(async () => {
+    if (!userId || !supabase) return
+    const { data } = await supabase.from('habit_logs').select('*')
+      .eq('user_id', userId).gte('log_date', start).lte('log_date', end)
+    if (data) setLogs(data)
+  }, [userId, month, year])
+
+  useEffect(() => {
+    fetch()
+    if (!supabase || !userId) return
+    const sub = supabase.channel(`habit_logs_month_${userId}_${month}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'habit_logs', filter: `user_id=eq.${userId}` }, fetch)
+      .subscribe()
+    return () => supabase.removeChannel(sub)
+  }, [userId, month, year, fetch])
+  return logs
 }
 
 export async function toggleHabitLog(habitId, userId) {
-  const today    = TODAY()
-  const existing = await db.habit_logs
-    .where('habit_id').equals(habitId)
-    .filter(l => l.log_date === today)
-    .first()
+  if (!supabase) return
+  const today = TODAY()
+  const { data: existing } = await supabase.from('habit_logs').select('*')
+    .eq('habit_id', habitId).eq('user_id', userId).eq('log_date', today).single()
 
   if (existing) {
-    const updated = { ...existing, completed: !existing.completed, updated_at: new Date().toISOString() }
-    markLocalWrite(existing.id)
-    await db.habit_logs.put(updated)
-    if (!userId?.startsWith('demo')) upsertToCloud('habit_logs', updated)
-    // Award XP only when marking as done (not undoing)
-    if (updated.completed) { useGamificationStore.getState().recordHabitDone(); pushGamification(userId) }
+    await supabase.from('habit_logs').update({
+      completed: !existing.completed,
+      updated_at: new Date().toISOString()
+    }).eq('id', existing.id)
+    if (!existing.completed) {
+      useGamificationStore.getState().recordHabitDone()
+      pushGamification(userId)
+    }
   } else {
-    const id  = uuid()
-    const record = {
-      id, habit_id: habitId, user_id: userId,
+    await supabase.from('habit_logs').insert({
+      id: uuid(), habit_id: habitId, user_id: userId,
       log_date: today, completed: true,
       updated_at: new Date().toISOString(),
-    }
-    markLocalWrite(id)
-    await db.habit_logs.put(record)
-    if (!userId?.startsWith('demo')) upsertToCloud('habit_logs', record)
-    // New log — always completed=true, award XP
+    })
     useGamificationStore.getState().recordHabitDone()
     pushGamification(userId)
   }
 }
 
 export async function computeStreak(habitId) {
-  const logs = await db.habit_logs
-    .where('habit_id').equals(habitId).filter(l => l.completed).toArray()
-  const doneDates = new Set(logs.map(l => l.log_date))
+  if (!supabase) return 0
+  const { data } = await supabase.from('habit_logs').select('log_date')
+    .eq('habit_id', habitId).eq('completed', true)
+  const doneDates = new Set((data || []).map(l => l.log_date))
   let streak = 0, cursor = new Date()
   while (true) {
     const ds = fmt(cursor)
@@ -81,43 +110,25 @@ export async function computeStreak(habitId) {
 }
 
 export async function addHabit({ name, icon, color, userId, goalDays }) {
-  const count = await db.habits.where('user_id').equals(userId).count()
-  const id    = uuid()
-  const now   = new Date().toISOString()
-  const record = {
-    id, user_id: userId, name,
-    icon:        icon || '●',
-    color:       color || '#5254e7',
-    frequency:   'daily',
-    target_days: [1,2,3,4,5,6,7],
-    goal_type:   'streak',
-    goal_value:  goalDays || 30,
-    sort_order:  count,
-    archived:    false,
-    created_at:  now,
-    updated_at:  now,
-  }
-  markLocalWrite(id)
-  await db.habits.put(record)
-  if (!userId?.startsWith('demo')) upsertToCloud('habits', record)
+  if (!supabase) return
+  const { count } = await supabase.from('habits').select('*', { count: 'exact', head: true }).eq('user_id', userId)
+  await supabase.from('habits').insert({
+    id: uuid(), user_id: userId, name,
+    icon: icon || '●', color: color || '#5254e7',
+    frequency: 'daily', target_days: [1,2,3,4,5,6,7],
+    goal_type: 'streak', goal_value: goalDays || 30,
+    sort_order: count || 0, archived: false,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  })
 }
 
 export async function updateHabit(id, fields) {
-  const habit = await db.habits.get(id)
-  if (!habit) return
-  const updated = { ...habit, ...fields, updated_at: new Date().toISOString() }
-  markLocalWrite(id)
-  await db.habits.put(updated)
-  if (!habit.user_id?.startsWith('demo')) upsertToCloud('habits', updated)
+  if (!supabase) return
+  await supabase.from('habits').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', id)
 }
 
 export async function archiveHabit(id) {
-  const habit = await db.habits.get(id)
-  if (!habit) return
-  markLocalWrite(id)
-  if (!habit.user_id?.startsWith('demo')) {
-    await deleteFromCloud('habits', id)
-  } else {
-    await db.habits.delete(id)
-  }
+  if (!supabase) return
+  await supabase.from('habits').delete().eq('id', id)
 }

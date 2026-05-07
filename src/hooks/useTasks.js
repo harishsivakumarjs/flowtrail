@@ -1,111 +1,102 @@
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db, uuid } from '@/lib/db'
+import { useState, useEffect, useCallback } from 'react'
+import { supabase } from '@/lib/supabase'
+import { uuid } from '@/lib/db'
 import { TODAY } from '@/lib/utils'
-import { upsertToCloud, deleteFromCloud, markLocalWrite } from '@/lib/sync'
-import { createCalendarEvent, isCalendarConnected } from '@/lib/googleCalendar'
 import { useGamificationStore } from '@/store/gamificationStore'
 import { pushGamification } from '@/lib/gamificationSync'
+import { createCalendarEvent, isCalendarConnected } from '@/lib/googleCalendar'
 
+// ── Realtime hook ─────────────────────────────────────────────
 export function useTasks(userId, filter = 'today') {
+  const [tasks, setTasks] = useState([])
   const today = TODAY()
-  return useLiveQuery(
-    () => {
-      if (!userId) return Promise.resolve([])
-      return db.tasks.where('user_id').equals(userId).toArray().then(all => {
-        if (filter === 'today')
-          return all.filter(t => t.due_date === today || (!t.due_date && t.status === 'pending'))
-        if (filter === 'upcoming')
-          return all.filter(t => t.due_date > today && t.status === 'pending')
-        return all
-      })
-    },
-    [userId, filter, today]
-  ) ?? []
+
+  const fetchTasks = useCallback(async () => {
+    if (!userId || !supabase) return
+    const { data } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', userId)
+      .order('due_date', { ascending: true })
+    if (data) {
+      let filtered = data
+      if (filter === 'today')
+        filtered = data.filter(t => (t.due_date === today || !t.due_date) && t.status === 'pending')
+      else if (filter === 'upcoming')
+        filtered = data.filter(t => t.due_date > today && t.status === 'pending')
+      setTasks(filtered)
+    }
+  }, [userId, filter, today])
+
+  useEffect(() => {
+    fetchTasks()
+    if (!supabase || !userId) return
+    const sub = supabase
+      .channel(`tasks_${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` },
+        () => fetchTasks())
+      .subscribe()
+    return () => supabase.removeChannel(sub)
+  }, [userId, filter, fetchTasks])
+
+  return tasks
 }
 
 export async function addTask({ title, priority, dueDate, dueTime, endTime, notes, userId }) {
-  const id  = uuid()
-  const now = new Date().toISOString()
+  if (!supabase) return
   const record = {
-    id, user_id: userId, title,
-    notes:      notes || '',
-    priority:   priority || 'medium',
-    status:     'pending',
-    due_date:   dueDate || TODAY(),
-    due_time:   dueTime || null,
-    end_time:   endTime || null,
-    created_at: now,
-    updated_at: now,
+    id: uuid(), user_id: userId, title,
+    notes: notes || '', priority: priority || 'medium',
+    status: 'pending',
+    due_date: dueDate || TODAY(),
+    due_time: dueTime || null,
+    end_time: endTime || null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   }
-  markLocalWrite(id)
-  await db.tasks.put(record)
-  if (!userId?.startsWith('demo')) {
-    upsertToCloud('tasks', record)
-    // Auto-create Google Calendar event if connected
-    if (isCalendarConnected()) {
-      const startDateTime = dueTime ? `${record.due_date}T${dueTime}:00` : null
-      createCalendarEvent({ title, priority: record.priority, dueDate: record.due_date, notes: record.notes, startDateTime })
-        .catch(err => console.warn('GCal event creation failed:', err))
-    }
+  await supabase.from('tasks').insert(record)
+  if (isCalendarConnected()) {
+    const startDateTime = dueTime ? `${record.due_date}T${dueTime}:00` : null
+    createCalendarEvent({ title, priority: record.priority, dueDate: record.due_date, notes: record.notes, startDateTime })
+      .catch(() => {})
   }
-  // Schedule notification if has time
-  if (dueTime) scheduleTaskNotification(record)
 }
 
 export async function toggleTask(id) {
-  const task = await db.tasks.get(id)
-  if (!task) return
-  const isDone = task.status === 'done'
-  const updated = {
-    ...task,
-    status:       isDone ? 'pending' : 'done',
+  if (!supabase) return
+  const { data } = await supabase.from('tasks').select('*').eq('id', id).single()
+  if (!data) return
+  const isDone = data.status === 'done'
+  await supabase.from('tasks').update({
+    status: isDone ? 'pending' : 'done',
     completed_at: isDone ? null : new Date().toISOString(),
-    updated_at:   new Date().toISOString(),
-  }
-  markLocalWrite(id)
-  await db.tasks.put(updated)
-  if (!task.user_id?.startsWith('demo')) upsertToCloud('tasks', updated)
-  // Award XP when completing
+    updated_at: new Date().toISOString(),
+  }).eq('id', id)
   if (!isDone) {
     useGamificationStore.getState().recordTaskDone()
-    pushGamification(task.user_id)
+    pushGamification(data.user_id)
   }
 }
 
 export async function updateTask(id, fields) {
-  const task = await db.tasks.get(id)
-  if (!task) return
-  const updated = { ...task, ...fields, updated_at: new Date().toISOString() }
-  markLocalWrite(id)
-  await db.tasks.put(updated)
-  if (!task.user_id?.startsWith('demo')) upsertToCloud('tasks', updated)
+  if (!supabase) return
+  await supabase.from('tasks').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', id)
 }
 
 export async function deleteTask(id) {
-  const task = await db.tasks.get(id)
-  if (!task) return
-  markLocalWrite(id)
-  if (!task.user_id?.startsWith('demo')) {
-    await deleteFromCloud('tasks', id)
-  } else {
-    await db.tasks.delete(id)
-  }
+  if (!supabase) return
+  await supabase.from('tasks').delete().eq('id', id)
 }
 
-/** Schedule a browser notification 30 min before task due time */
 export function scheduleTaskNotification(task) {
   if (Notification.permission !== 'granted') return
   if (!task.due_date || !task.due_time) return
-
   const dueDateTime = new Date(`${task.due_date}T${task.due_time}:00`)
-  const notifyAt    = dueDateTime.getTime() - Date.now() - 30 * 60 * 1000
-
+  const notifyAt = dueDateTime.getTime() - Date.now() - 30 * 60 * 1000
   if (notifyAt > 0 && notifyAt < 24 * 60 * 60 * 1000) {
     setTimeout(() => {
       new Notification(`⏰ Task due in 30 min: ${task.title}`, {
-        body: `Priority: ${task.priority}`,
-        icon: '/favicon.svg',
-        tag:  `task-${task.id}`,
+        body: `Priority: ${task.priority}`, icon: '/favicon.svg', tag: `task-${task.id}`,
       })
     }, notifyAt)
   }

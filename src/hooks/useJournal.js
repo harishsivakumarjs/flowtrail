@@ -1,101 +1,91 @@
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db, uuid } from '@/lib/db'
+import { useState, useEffect, useCallback } from 'react'
+import { supabase } from '@/lib/supabase'
+import { uuid } from '@/lib/db'
 import { TODAY } from '@/lib/utils'
-import { upsertToCloud, deleteFromCloud } from '@/lib/sync'
 
-// ── Journal entries — multiple per day supported ─────────────
-
-/** All entries for a specific date (multiple allowed) */
-export function useJournalEntriesForDate(userId, date) {
-  return useLiveQuery(
-    () => userId
-      ? db.journal_entries.where('user_id').equals(userId)
-          .filter(e => e.entry_date === date)
-          .toArray()
-          .then(arr => arr.sort((a, b) => a.created_at?.localeCompare(b.created_at)))
-      : Promise.resolve([]),
-    [userId, date]
-  ) ?? []
-}
-
-/** All entries across all dates for sidebar history */
 export function useJournalEntries(userId) {
-  return useLiveQuery(
-    () => userId
-      ? db.journal_entries.where('user_id').equals(userId).reverse().sortBy('updated_at')
-      : Promise.resolve([]),
-    [userId]
-  ) ?? []
+  const [entries, setEntries] = useState([])
+  const fetch = useCallback(async () => {
+    if (!userId || !supabase) return
+    const { data } = await supabase.from('journal_entries').select('*')
+      .eq('user_id', userId).order('updated_at', { ascending: false })
+    if (data) setEntries(data)
+  }, [userId])
+
+  useEffect(() => {
+    fetch()
+    if (!supabase || !userId) return
+    const sub = supabase.channel(`journal_${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'journal_entries', filter: `user_id=eq.${userId}` }, fetch)
+      .subscribe()
+    return () => supabase.removeChannel(sub)
+  }, [userId, fetch])
+  return entries
 }
 
-/** Create a brand new journal entry for a date */
+export function useJournalEntriesForDate(userId, date) {
+  const all = useJournalEntries(userId)
+  return all.filter(e => e.entry_date === date)
+    .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+}
+
 export async function createJournalEntry({ userId, date, content, prompt, title }) {
+  if (!supabase) return null
   const wordCount = content.replace(/<[^>]*>/g, '').trim().split(/\s+/).filter(Boolean).length
   const record = {
-    id:         uuid(),
-    user_id:    userId,
-    entry_date: date,
-    title:      title || '',
-    prompt,
-    content,
-    word_count: wordCount,
-    mood:       null,
+    id: uuid(), user_id: userId,
+    entry_date: date, title: title || '',
+    prompt, content, word_count: wordCount,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
-  await db.journal_entries.put(record)
-  if (!userId?.startsWith('demo')) upsertToCloud('journal_entries', record)
+  await supabase.from('journal_entries').insert(record)
   return record.id
 }
 
-/** Update an existing entry by ID */
 export async function updateJournalEntry(id, { content, title, userId }) {
+  if (!supabase) return
   const wordCount = content.replace(/<[^>]*>/g, '').trim().split(/\s+/).filter(Boolean).length
-  const entry = await db.journal_entries.get(id)
-  if (!entry) return
-  const updated = { ...entry, content, title: title || entry.title, word_count: wordCount, updated_at: new Date().toISOString() }
-  await db.journal_entries.put(updated)
-  if (!userId?.startsWith('demo')) upsertToCloud('journal_entries', updated)
+  await supabase.from('journal_entries').update({
+    content, title: title || '', word_count: wordCount,
+    updated_at: new Date().toISOString(),
+  }).eq('id', id)
 }
 
-/** Delete a journal entry */
-export async function deleteJournalEntry(id, userId) {
-  if (!userId?.startsWith('demo')) {
-    await deleteFromCloud('journal_entries', id)
-  } else {
-    await db.journal_entries.delete(id)
-  }
-}
-
-// ── Sleep logs ───────────────────────────────────────────────
-export function useSleepLog(userId, date) {
-  return useLiveQuery(
-    () => userId
-      ? db.sleep_logs.where('user_id').equals(userId).filter(s => s.log_date === date).first()
-      : Promise.resolve(null),
-    [userId, date]
-  )
+export async function deleteJournalEntry(id) {
+  if (!supabase) return
+  await supabase.from('journal_entries').delete().eq('id', id)
 }
 
 export function useSleepLogs(userId, days = 30) {
-  return useLiveQuery(
-    () => userId
-      ? db.sleep_logs.where('user_id').equals(userId).reverse().limit(days).sortBy('log_date')
-      : Promise.resolve([]),
-    [userId]
-  ) ?? []
+  const [logs, setLogs] = useState([])
+  const fetch = useCallback(async () => {
+    if (!userId || !supabase) return
+    const { data } = await supabase.from('sleep_logs').select('*')
+      .eq('user_id', userId).order('log_date', { ascending: false }).limit(days)
+    if (data) setLogs(data)
+  }, [userId, days])
+  useEffect(() => { fetch() }, [fetch])
+  return logs
 }
 
 export async function saveSleepLog({ userId, date, hours }) {
-  const existing = await db.sleep_logs
-    .where('user_id').equals(userId).filter(s => s.log_date === date).first()
+  if (!supabase) return
+  const { data: existing } = await supabase.from('sleep_logs').select('id')
+    .eq('user_id', userId).eq('log_date', date).single()
   if (existing) {
-    const updated = { ...existing, hours, updated_at: new Date().toISOString() }
-    await db.sleep_logs.put(updated)
-    if (!userId?.startsWith('demo')) upsertToCloud('sleep_logs', updated)
+    await supabase.from('sleep_logs').update({ hours, updated_at: new Date().toISOString() }).eq('id', existing.id)
   } else {
-    const record = { id: uuid(), user_id: userId, log_date: date, hours, updated_at: new Date().toISOString() }
-    await db.sleep_logs.put(record)
-    if (!userId?.startsWith('demo')) upsertToCloud('sleep_logs', record)
+    await supabase.from('sleep_logs').insert({ id: uuid(), user_id: userId, log_date: date, hours, updated_at: new Date().toISOString() })
   }
+}
+
+export function useSleepLog(userId, date) {
+  const [log, setLog] = useState(null)
+  useEffect(() => {
+    if (!userId || !supabase) return
+    supabase.from('sleep_logs').select('*').eq('user_id', userId).eq('log_date', date).single()
+      .then(({ data }) => setLog(data || null))
+  }, [userId, date])
+  return log
 }

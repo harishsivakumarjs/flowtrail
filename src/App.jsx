@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/appStore'
 import { supabase } from '@/lib/supabase'
-import { fullSync, syncFromCloud, subscribeRealtime } from '@/lib/sync'
 import { pushGamification, pullGamification } from '@/lib/gamificationSync'
 import { useGamificationStore } from '@/store/gamificationStore'
 
@@ -77,22 +76,9 @@ export default function App() {
 
   useEffect(() => {
     if (!user?.id || user?.demo || !supabase) return
-    setSyncing(true)
-    fullSync(user.id).then(() => { setSyncing(false); setLastSync() })
-    const unsub    = subscribeRealtime(user.id, () => setLastSync())
-    const interval = setInterval(() => {
-      if (navigator.onLine) {
-        syncFromCloud(user.id).then(setLastSync)
-        pushGamification(user.id)
-      }
-    }, 15000)
-    // Push gamification every 20 seconds
-    const gami = setInterval(() => pushGamification(user.id), 20000)
-
-    // Also pull on mount to get latest from other device
     pullGamification(user.id)
-
-    return () => { unsub(); clearInterval(interval); clearInterval(gami) }
+    const gami = setInterval(() => pushGamification(user.id), 30000)
+    return () => clearInterval(gami)
   }, [user?.id])
 
   return (

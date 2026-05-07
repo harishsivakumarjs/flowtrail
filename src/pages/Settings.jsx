@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Sun, Moon, Download, Trash2, Github, Info, Linkedin } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 import { useAppStore } from '@/store/appStore'
-import { db } from '@/lib/db'
 
 export default function Settings() {
   const { theme, toggleTheme, user } = useAppStore()
@@ -103,7 +103,7 @@ export default function Settings() {
         />
         <Row
           label="Clear local data"
-          sub="Wipes IndexedDB — cloud data is unaffected"
+          sub="Clears local cache — cloud data is unaffected"
           action={
             <button className="btn btn-danger flex items-center gap-2" onClick={handleClearLocal} disabled={clearing}>
               <Trash2 size={15} />
@@ -116,7 +116,7 @@ export default function Settings() {
       <Section title="About">
         <Row
           label="FlowTrail"
-          sub="v1.0.0 · Open source personal productivity app"
+          sub="v2.0.0 · Open source personal productivity app"
           action={
             <div className="flex items-center gap-2">
               <a href="https://github.com/harishsivakumarjs/flowtrail"
@@ -144,7 +144,7 @@ export default function Settings() {
         />
         <Row
           label="Tech stack"
-          sub="React · Vite · Supabase · Dexie · TailwindCSS · Recharts · Tiptap"
+          sub="React · Vite · Supabase · TailwindCSS · Recharts · Tiptap"
           action={null}
         />
       </Section>

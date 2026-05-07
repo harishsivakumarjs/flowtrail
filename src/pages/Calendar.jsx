@@ -5,8 +5,7 @@ import { ChevronLeft, ChevronRight, Calendar as CalIcon, Plus,
          RefreshCw, Unlink, ExternalLink, Trash2, Edit2,
          Clock, Download, CheckCircle } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '@/lib/db'
+import { supabase } from '@/lib/supabase'
 import {
   isCalendarConnected, connectGoogleCalendar, disconnectCalendar,
   fetchCalendarEvents, scheduleEventNotifications, createCalendarEvent,

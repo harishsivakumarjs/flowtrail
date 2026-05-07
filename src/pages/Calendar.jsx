@@ -55,6 +55,7 @@ function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefres
   const [title, setTitle]       = useState('')
   const [date, setDate]         = useState(defaultDate || TODAY())
   const [time, setTime]         = useState('')
+  const [endTime, setEndTime]   = useState('')
   const [priority, setPriority] = useState('medium')
   const [notes, setNotes]       = useState('')
   const [saving, setSaving]     = useState(false)
@@ -67,17 +68,19 @@ function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefres
       setTitle(editingEvent.title || '')
       setDate(editingEvent.start?.split('T')[0] || TODAY())
       setTime(editingEvent.start?.includes('T') ? editingEvent.start.split('T')[1]?.slice(0,5) : '')
+      setEndTime(editingEvent.end?.includes('T') ? editingEvent.end.split('T')[1]?.slice(0,5) : '')
       setNotes(editingEvent.desc || '')
     } else if (editingTask) {
       setType('task')
       setTitle(editingTask.title || '')
       setDate(editingTask.due_date || TODAY())
       setTime(editingTask.due_time || '')
+      setEndTime(editingTask.end_time || '')
       setPriority(editingTask.priority || 'medium')
       setNotes(editingTask.notes || '')
     } else {
       setTitle(''); setDate(defaultDate || TODAY()); setTime('')
-      setPriority('medium'); setNotes(''); setDone(false); setType('task')
+      setEndTime(''); setPriority('medium'); setNotes(''); setDone(false); setType('task')
     }
   }, [open, editingEvent, editingTask, defaultDate])
 
@@ -86,18 +89,19 @@ function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefres
     setSaving(true)
     if (isEditing) {
       if (editingTask) {
-        await updateTask(editingTask.id, { title: title.trim(), priority, due_date: date, due_time: time || null, notes })
+        await updateTask(editingTask.id, { title: title.trim(), priority, due_date: date, due_time: time || null, end_time: endTime || null, notes })
       } else if (editingEvent) {
         await updateCalendarEvent(editingEvent.id, { title: title.trim(), date, time, notes })
         onRefresh?.()
       }
     } else {
       if (type === 'task') {
-        await addTask({ title: title.trim(), priority, dueDate: date, dueTime: time || null, notes, userId })
+        await addTask({ title: title.trim(), priority, dueDate: date, dueTime: time || null, endTime: endTime || null, notes, userId })
       } else {
         if (!connected) { alert('Connect Google Calendar first'); setSaving(false); return }
         const startDateTime = time ? `${date}T${time}:00` : null
-        await createCalendarEvent({ title: title.trim(), dueDate: date, notes, priority: 'medium', startDateTime })
+        const endDateTime = endTime ? `${date}T${endTime}:00` : null
+        await createCalendarEvent({ title: title.trim(), dueDate: date, notes, priority: 'medium', startDateTime, endDateTime })
         onRefresh?.()
       }
     }
@@ -135,7 +139,17 @@ function AddEventModal({ open, onClose, userId, defaultDate, connected, onRefres
             <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
               Time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span>
             </label>
-            <TimeInput value={time} onChange={setTime} />
+            <div className="flex items-center gap-2 flex-wrap">
+              <div>
+                <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Start</div>
+                <TimeInput value={time} onChange={setTime} />
+              </div>
+              <div className="text-sm font-medium mt-4" style={{ color: 'var(--text-muted)' }}>→</div>
+              <div>
+                <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>End</div>
+                <TimeInput value={endTime} onChange={setEndTime} />
+              </div>
+            </div>
           </div>
         </div>
 

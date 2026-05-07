@@ -106,7 +106,7 @@ export async function fetchCalendarEvents(startDate, endDate) {
 }
 
 /** Create a Google Calendar event from a FlowTrail task or directly */
-export async function createCalendarEvent({ title, dueDate, notes, priority, startDateTime }) {
+export async function createCalendarEvent({ title, dueDate, notes, priority, startDateTime, endDateTime }) {
   const token = getStoredToken()
   if (!token) return null
 

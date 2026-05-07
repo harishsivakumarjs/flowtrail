@@ -23,7 +23,7 @@ export function useTasks(userId, filter = 'today') {
   ) ?? []
 }
 
-export async function addTask({ title, priority, dueDate, dueTime, notes, userId }) {
+export async function addTask({ title, priority, dueDate, dueTime, endTime, notes, userId }) {
   const id  = uuid()
   const now = new Date().toISOString()
   const record = {
@@ -33,6 +33,7 @@ export async function addTask({ title, priority, dueDate, dueTime, notes, userId
     status:     'pending',
     due_date:   dueDate || TODAY(),
     due_time:   dueTime || null,
+    end_time:   endTime || null,
     created_at: now,
     updated_at: now,
   }

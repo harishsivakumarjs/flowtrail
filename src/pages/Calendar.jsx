@@ -213,7 +213,7 @@ function DetailModal({ item, open, onClose, userId, onEdit, onDelete, onComplete
   const timeStr = isGoogle
     ? formatTime(item.start)
     : item.due_date
-      ? `${format(new Date(item.due_date + 'T00:00'), 'MMM d, yyyy')}${item.due_time ? ' · ' + format(new Date(`${item.due_date}T${item.due_time}`), 'h:mm a') : ''}`
+      ? `${format(new Date(item.due_date + 'T00:00'), 'MMM d, yyyy')}${item.due_time ? ' · ' + format(new Date(`${item.due_date}T${item.due_time}`), 'h:mm a') + (item.end_time ? ' → ' + format(new Date(`${item.due_date}T${item.end_time}`), 'h:mm a') : '') : ''}`
       : null
 
   const handleReschedule = async () => {

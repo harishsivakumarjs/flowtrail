@@ -16,15 +16,16 @@ function AddTaskModal({ open, onClose, userId }) {
   const [priority, setPriority] = useState('medium')
   const [dueDate, setDueDate]   = useState(TODAY())
   const [dueTime, setDueTime]   = useState('')
+  const [endTime, setEndTime]   = useState('')
   const [notes, setNotes]       = useState('')
   const [saving, setSaving]     = useState(false)
 
   const handleSave = async () => {
     if (!title.trim()) return
     setSaving(true)
-    await addTask({ title: title.trim(), priority, dueDate, dueTime: dueTime || null, notes, userId })
+    await addTask({ title: title.trim(), priority, dueDate, dueTime: dueTime || null, endTime: endTime || null, notes, userId })
     setTitle(''); setNotes(''); setPriority('medium')
-    setDueDate(TODAY()); setDueTime('')
+    setDueDate(TODAY()); setDueTime(''); setEndTime('')
     setSaving(false)
     onClose()
   }
@@ -52,9 +53,19 @@ function AddTaskModal({ open, onClose, userId }) {
         {/* Time field */}
         <div>
           <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-            Time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional — get notified 30 min before)</span>
+            Time <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional — notified 30 min before)</span>
           </label>
-          <TimeInput value={dueTime} onChange={setDueTime} />
+          <div className="flex items-center gap-2 flex-wrap">
+            <div>
+              <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Start</div>
+              <TimeInput value={dueTime} onChange={setDueTime} />
+            </div>
+            <div className="text-sm font-medium mt-4" style={{ color: 'var(--text-muted)' }}>→</div>
+            <div>
+              <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>End</div>
+              <TimeInput value={endTime} onChange={setEndTime} />
+            </div>
+          </div>
         </div>
 
         <div>
@@ -162,7 +173,7 @@ function TaskItem({ task, onFutureClick }) {
           {task.due_time && (
             <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
               <Clock size={11} />
-              <span>{format(new Date(`${task.due_date || today}T${task.due_time}`), 'h:mm a')}</span>
+              <span>{format(new Date(`${task.due_date || today}T${task.due_time}`), 'h:mm a')}{task.end_time ? ' → ' + format(new Date(`${task.due_date || today}T${task.end_time}`), 'h:mm a') : ''}</span>
             </div>
           )}
         </div>

@@ -11,7 +11,7 @@ const PRIORITIES = ['high', 'medium', 'low']
 const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 }
 
 // ── Add / Edit Task Modal ─────────────────────────────────────
-function TaskModal({ open, onClose, userId, editing = null }) {
+function TaskModal({ open, onClose, onSaved, userId, editing = null }) {
   const [title, setTitle]       = useState(editing?.title || '')
   const [priority, setPriority] = useState(editing?.priority || 'medium')
   const [dueDate, setDueDate]   = useState(editing?.due_date || TODAY())
@@ -35,6 +35,7 @@ function TaskModal({ open, onClose, userId, editing = null }) {
       await addTask({ title: title.trim(), priority, dueDate, dueTime: dueTime || null, endTime: endTime || null, notes, userId })
     }
     setSaving(false)
+    if (onSaved) onSaved()
     onClose()
   }
 
@@ -387,6 +388,7 @@ export default function Tasks() {
       <TaskModal
         open={showAdd}
         onClose={() => { setShowAdd(false); setEditingTask(null) }}
+        onSaved={() => {}}
         userId={userId}
         editing={editingTask}
       />

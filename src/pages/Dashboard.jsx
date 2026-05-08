@@ -84,10 +84,11 @@ export default function Dashboard() {
 
   // 30-day heatmap
   const days = last30Days()
-  const allLogs = useLiveQuery(
-    () => userId ? db.habit_logs.where('user_id').equals(userId).filter(l => l.completed).toArray() : Promise.resolve([]),
-    [userId]
-  ) ?? []
+  const [allLogs, setAllLogs] = useState([])
+  useEffect(() => {
+    if (!userId || !supabase) return
+    supabase.from('habit_logs').select('*').eq('user_id', userId).then(({ data }) => data && setAllLogs(data))
+  }, [userId])
   const logsByDate = {}
   allLogs.forEach(l => { logsByDate[l.log_date] = (logsByDate[l.log_date] || 0) + 1 })
   const maxPerDay = habits.length || 1

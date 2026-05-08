@@ -39,26 +39,21 @@ export default function Analytics() {
   const { xp, earnedBadges, totalHabitsDone, totalTasksDone, totalSessions } = useGamificationStore()
   const level = getLevel(xp)
 
-  const habits = useLiveQuery(
-    () => userId ? db.habits.where('user_id').equals(userId).filter(h => !h.archived).toArray() : Promise.resolve([]),
-    [userId]
-  ) ?? []
-  const habitLogs = useLiveQuery(
-    () => userId ? db.habit_logs.where('user_id').equals(userId).filter(l => l.completed).toArray() : Promise.resolve([]),
-    [userId]
-  ) ?? []
-  const sleepLogs = useLiveQuery(
-    () => userId ? db.sleep_logs.where('user_id').equals(userId).toArray() : Promise.resolve([]),
-    [userId]
-  ) ?? []
-  const journalEntries = useLiveQuery(
-    () => userId ? db.journal_entries.where('user_id').equals(userId).toArray() : Promise.resolve([]),
-    [userId]
-  ) ?? []
-  const tasks = useLiveQuery(
-    () => userId ? db.tasks.where('user_id').equals(userId).toArray() : Promise.resolve([]),
-    [userId]
-  ) ?? []
+  const [habits, setHabits]                 = useState([])
+  const [habitLogs, setHabitLogs]           = useState([])
+  const [sleepLogs, setSleepLogs]           = useState([])
+  const [journalEntries, setJournalEntries] = useState([])
+  const [tasks, setTasks]                   = useState([])
+
+  useEffect(() => {
+    if (!userId || !supabase) return
+    supabase.from('habits').select('*').eq('user_id', userId).then(({ data }) => data && setHabits(data))
+    supabase.from('habit_logs').select('*').eq('user_id', userId).then(({ data }) => data && setHabitLogs(data))
+    supabase.from('sleep_logs').select('*').eq('user_id', userId).then(({ data }) => data && setSleepLogs(data))
+    supabase.from('journal_entries').select('*').eq('user_id', userId).then(({ data }) => data && setJournalEntries(data))
+    supabase.from('tasks').select('*').eq('user_id', userId).then(({ data }) => data && setTasks(data))
+  }, [userId])
+
 
   const last30 = useMemo(() => {
     const end = new Date(), start = subDays(end, 29)

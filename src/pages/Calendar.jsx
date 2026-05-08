@@ -543,17 +543,31 @@ export default function Calendar() {
     setSelectedItem(null)
   }
 
-  const tasks = useLiveQuery(
-    () => userId ? db.tasks.where('user_id').equals(userId).toArray() : Promise.resolve([]), [userId]
-  ) ?? []
+  const [tasks, setTasks]           = useState([])
+  const [habitLogs, setHabitLogs]   = useState([])
+  const [habitCount, setHabitCount] = useState(0)
 
-  const habitLogs = useLiveQuery(
-    () => userId ? db.habit_logs.where('user_id').equals(userId).filter(l => l.completed).toArray() : Promise.resolve([]), [userId]
-  ) ?? []
+  const fetchCalData = useCallback(async () => {
+    if (!userId || !supabase) return
+    const [{ data: t }, { data: hl }, { count: hc }] = await Promise.all([
+      supabase.from('tasks').select('*').eq('user_id', userId).neq('status', 'done'),
+      supabase.from('habit_logs').select('*').eq('user_id', userId).eq('completed', true),
+      supabase.from('habits').select('*', { count: 'exact', head: true }).eq('user_id', userId).eq('archived', false),
+    ])
+    if (t) setTasks(t)
+    if (hl) setHabitLogs(hl)
+    setHabitCount(hc || 0)
+  }, [userId])
 
-  const habitCount = useLiveQuery(
-    () => userId ? db.habits.where('user_id').equals(userId).filter(h => !h.archived).count() : Promise.resolve(0), [userId]
-  ) ?? 0
+  useEffect(() => {
+    fetchCalData()
+    if (!supabase || !userId) return
+    const sub = supabase.channel(`cal_data_${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` }, fetchCalData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'habit_logs', filter: `user_id=eq.${userId}` }, fetchCalData)
+      .subscribe()
+    return () => supabase.removeChannel(sub)
+  }, [userId, fetchCalData])
 
   const logsByDate = {}
   habitLogs.forEach(l => { logsByDate[l.log_date] = (logsByDate[l.log_date] || 0) + 1 })

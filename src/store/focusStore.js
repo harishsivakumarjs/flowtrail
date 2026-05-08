@@ -1,14 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-/** Detect if running on Android/mobile browser */
 export const isMobile = () =>
   /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
 
 export const useFocusStore = create(
   persist(
     (set, get) => ({
-      // ── Blocked sites ───────────────────────────────────
+      // ── Blocked sites ─────────────────────────────────
       blockedSites: [
         'instagram.com', 'twitter.com', 'x.com',
         'youtube.com', 'reddit.com', 'facebook.com',
@@ -22,11 +21,33 @@ export const useFocusStore = create(
       removeSite: (site) =>
         set(s => ({ blockedSites: s.blockedSites.filter(b => b !== site) })),
 
-      // ── Mobile soft-blocker active flag ────────────────
+      // ── Site rules: daily time limit + delay ──────────
+      // { 'instagram.com': { dailyMins: 30, delayMins: 5 } }
+      siteLimits: {},
+      setSiteLimit: (site, rules) =>
+        set(s => ({ siteLimits: { ...s.siteLimits, [site]: rules } })),
+
+      // ── Site usage tracking ───────────────────────────
+      // { 'instagram.com': { '2026-05-05': 12 } }  (minutes used)
+      siteUsage: {},
+      recordUsage: (site, mins = 1) => {
+        const today = new Date().toDateString()
+        set(s => {
+          const prev = s.siteUsage?.[site]?.[today] || 0
+          return {
+            siteUsage: {
+              ...s.siteUsage,
+              [site]: { ...(s.siteUsage?.[site] || {}), [today]: prev + mins }
+            }
+          }
+        })
+      },
+
+      // ── Mobile blocker ────────────────────────────────
       mobileBlockerActive: false,
       setMobileBlocker: (v) => set({ mobileBlockerActive: v }),
 
-      // ── Focus session ───────────────────────────────────
+      // ── Focus session ─────────────────────────────────
       sessionActive:  false,
       sessionMinutes: 25,
       sessionStart:   null,
@@ -56,7 +77,7 @@ export const useFocusStore = create(
         }))
       },
 
-      // ── Intent log ──────────────────────────────────────
+      // ── Intent log ────────────────────────────────────
       intentLog: [],
       addIntent: (site, reason) =>
         set(s => ({
@@ -67,13 +88,15 @@ export const useFocusStore = create(
         })),
       clearIntentLog: () => set({ intentLog: [] }),
 
-      // ── Session history ─────────────────────────────────
+      // ── Session history ───────────────────────────────
       sessionHistory: [],
     }),
     {
       name: 'flowtrail-focus',
       partialize: (s) => ({
         blockedSites:   s.blockedSites,
+        siteLimits:     s.siteLimits,
+        siteUsage:      s.siteUsage,
         intentLog:      s.intentLog,
         sessionHistory: s.sessionHistory,
       }),

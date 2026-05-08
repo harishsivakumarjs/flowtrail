@@ -1,53 +1,74 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { uuid } from '@/lib/db'
 import { TODAY } from '@/lib/utils'
 import { useGamificationStore } from '@/store/gamificationStore'
 import { pushGamification } from '@/lib/gamificationSync'
 
-function useRealtimeTable(table, userId, buildQuery) {
-  const [data, setData] = useState([])
-  useEffect(() => {
-    if (!userId || !supabase) return
-    const fetch = async () => {
-      const { data: rows } = await buildQuery(supabase.from(table).select('*').eq('user_id', userId))
-      if (rows) setData(rows)
-    }
-    fetch()
-    const ch = supabase.channel(`${table}_${userId}_${Math.random()}`)
-    ch.on('postgres_changes', { event: '*', schema: 'public', table, filter: `user_id=eq.${userId}` }, () => fetch())
-      .subscribe()
-    return () => { supabase.removeChannel(ch) }
-  }, [userId])
-  return data
-}
+// Global state so all components share the same data
+let habitsListeners = []
+let habitLogsListeners = []
+
+function notifyHabits() { habitsListeners.forEach(fn => fn()) }
+function notifyHabitLogs() { habitLogsListeners.forEach(fn => fn()) }
 
 export function useHabits(userId) {
-  return useRealtimeTable('habits', userId, q => q.eq('archived', false).order('sort_order'))
+  const [habits, setHabits] = useState([])
+
+  const fetch = useCallback(async () => {
+    if (!userId || !supabase) return
+    const { data } = await supabase.from('habits').select('*')
+      .eq('user_id', userId).eq('archived', false).order('sort_order')
+    if (data) setHabits(data)
+  }, [userId])
+
+  useEffect(() => {
+    fetch()
+    habitsListeners.push(fetch)
+    return () => { habitsListeners = habitsListeners.filter(f => f !== fetch) }
+  }, [fetch])
+
+  return habits
 }
 
 export function useTodayLogs(userId) {
+  const [logs, setLogs] = useState([])
   const today = TODAY()
-  return useRealtimeTable('habit_logs', userId, q => q.eq('log_date', today))
+
+  const fetch = useCallback(async () => {
+    if (!userId || !supabase) return
+    const { data } = await supabase.from('habit_logs').select('*')
+      .eq('user_id', userId).eq('log_date', today)
+    if (data) setLogs(data)
+  }, [userId, today])
+
+  useEffect(() => {
+    fetch()
+    habitLogsListeners.push(fetch)
+    return () => { habitLogsListeners = habitLogsListeners.filter(f => f !== fetch) }
+  }, [fetch])
+
+  return logs
 }
 
 export function useHabitLogs(userId, month, year) {
   const [logs, setLogs] = useState([])
-  useEffect(() => {
+
+  const fetch = useCallback(async () => {
     if (!userId || !supabase) return
     const start = `${year}-${String(month).padStart(2,'0')}-01`
     const end   = `${year}-${String(month).padStart(2,'0')}-31`
-    const fetch = async () => {
-      const { data } = await supabase.from('habit_logs').select('*')
-        .eq('user_id', userId).gte('log_date', start).lte('log_date', end)
-      if (data) setLogs(data)
-    }
-    fetch()
-    const ch = supabase.channel(`habit_logs_month_${userId}_${month}_${year}_${Math.random()}`)
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'habit_logs', filter: `user_id=eq.${userId}` }, () => fetch())
-      .subscribe()
-    return () => { supabase.removeChannel(ch) }
+    const { data } = await supabase.from('habit_logs').select('*')
+      .eq('user_id', userId).gte('log_date', start).lte('log_date', end)
+    if (data) setLogs(data)
   }, [userId, month, year])
+
+  useEffect(() => {
+    fetch()
+    habitLogsListeners.push(fetch)
+    return () => { habitLogsListeners = habitLogsListeners.filter(f => f !== fetch) }
+  }, [fetch])
+
   return logs
 }
 
@@ -73,12 +94,13 @@ export async function toggleHabitLog(habitId, userId) {
     useGamificationStore.getState().recordHabitDone()
     pushGamification(userId)
   }
+  notifyHabitLogs()
 }
 
 export async function addHabit({ name, icon, color, userId, goalDays }) {
   if (!supabase) return
   const { count } = await supabase.from('habits').select('*', { count: 'exact', head: true }).eq('user_id', userId)
-  await supabase.from('habits').insert({
+  const { error } = await supabase.from('habits').insert({
     id: uuid(), user_id: userId, name,
     icon: icon || '●', color: color || '#5254e7',
     frequency: 'daily', target_days: [1,2,3,4,5,6,7],
@@ -87,15 +109,22 @@ export async function addHabit({ name, icon, color, userId, goalDays }) {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   })
+  if (error) console.error('addHabit:', error)
+  else notifyHabits()
 }
 
 export async function updateHabit(id, fields) {
   if (!supabase) return
-  await supabase.from('habits').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', id)
+  const { error } = await supabase.from('habits')
+    .update({ ...fields, updated_at: new Date().toISOString() }).eq('id', id)
+  if (error) console.error('updateHabit:', error)
+  else notifyHabits()
 }
 
 export async function archiveHabit(id) {
   if (!supabase) return
   if (!window.confirm('Delete this habit?')) return
-  await supabase.from('habits').delete().eq('id', id)
+  const { error } = await supabase.from('habits').delete().eq('id', id)
+  if (error) console.error('archiveHabit:', error)
+  else notifyHabits()
 }

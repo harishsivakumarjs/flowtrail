@@ -6,11 +6,15 @@ import { useGamificationStore } from '@/store/gamificationStore'
 import { pushGamification } from '@/lib/gamificationSync'
 import { isCalendarConnected, createCalendarEvent } from '@/lib/googleCalendar'
 
+// Global listeners for instant UI updates
+let taskListeners = []
+function notifyTasks() { taskListeners.forEach(fn => fn()) }
+
 export function useTasks(userId, filter = 'today') {
   const [tasks, setTasks] = useState([])
   const today = TODAY()
 
-  const fetchTasks = useCallback(async () => {
+  const fetch = useCallback(async () => {
     if (!userId || !supabase) return
     let q = supabase.from('tasks').select('*').eq('user_id', userId)
     if (filter === 'today')
@@ -18,27 +22,25 @@ export function useTasks(userId, filter = 'today') {
     else if (filter === 'upcoming')
       q = q.gt('due_date', today).eq('status', 'pending')
     const { data, error } = await q.order('due_date')
-    if (error) { console.error('useTasks:', error); return }
+    if (error) { console.error('useTasks fetch:', error); return }
     if (data) setTasks(data)
   }, [userId, filter, today])
 
   useEffect(() => {
-    fetchTasks()
-    if (!supabase || !userId) return
-    const ch = supabase.channel(`tasks_${userId}_${Math.random()}`)
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` },
-      () => fetchTasks()
-    ).subscribe()
-    return () => { supabase.removeChannel(ch) }
-  }, [userId, filter, fetchTasks])
+    fetch()
+    taskListeners.push(fetch)
+    return () => { taskListeners = taskListeners.filter(f => f !== fetch) }
+  }, [fetch])
 
   return tasks
 }
 
 export async function addTask({ title, priority, dueDate, dueTime, endTime, notes, userId }) {
-  if (!supabase || !userId) { console.error('addTask: missing supabase or userId'); return }
+  if (!supabase) { console.error('addTask: supabase not initialized'); return }
+  if (!userId)   { console.error('addTask: userId missing'); return }
   const record = {
-    id: uuid(), user_id: userId,
+    id: uuid(),
+    user_id: userId,
     title: title.trim(),
     notes: notes || '',
     priority: priority || 'medium',
@@ -50,7 +52,8 @@ export async function addTask({ title, priority, dueDate, dueTime, endTime, note
     updated_at: new Date().toISOString(),
   }
   const { error } = await supabase.from('tasks').insert(record)
-  if (error) { console.error('addTask error:', error); return }
+  if (error) { console.error('addTask insert error:', error); return }
+  notifyTasks()
   if (isCalendarConnected() && dueTime) {
     createCalendarEvent({
       title: record.title, priority: record.priority,
@@ -63,14 +66,16 @@ export async function addTask({ title, priority, dueDate, dueTime, endTime, note
 
 export async function toggleTask(id) {
   if (!supabase) return
-  const { data } = await supabase.from('tasks').select('*').eq('id', id).single()
-  if (!data) return
+  const { data, error } = await supabase.from('tasks').select('*').eq('id', id).single()
+  if (error || !data) { console.error('toggleTask fetch:', error); return }
   const isDone = data.status === 'done'
-  await supabase.from('tasks').update({
+  const { error: updateError } = await supabase.from('tasks').update({
     status: isDone ? 'pending' : 'done',
     completed_at: isDone ? null : new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }).eq('id', id)
+  if (updateError) { console.error('toggleTask update:', updateError); return }
+  notifyTasks()
   if (!isDone) {
     useGamificationStore.getState().recordTaskDone()
     pushGamification(data.user_id)
@@ -82,13 +87,15 @@ export async function updateTask(id, fields) {
   const { error } = await supabase.from('tasks')
     .update({ ...fields, updated_at: new Date().toISOString() })
     .eq('id', id)
-  if (error) console.error('updateTask:', error)
+  if (error) { console.error('updateTask:', error); return }
+  notifyTasks()
 }
 
 export async function deleteTask(id) {
   if (!supabase) return
   const { error } = await supabase.from('tasks').delete().eq('id', id)
-  if (error) console.error('deleteTask:', error)
+  if (error) { console.error('deleteTask:', error); return }
+  notifyTasks()
 }
 
 export function scheduleTaskNotification(task) {

@@ -4,48 +4,44 @@ import { uuid } from '@/lib/db'
 import { TODAY } from '@/lib/utils'
 import { useGamificationStore } from '@/store/gamificationStore'
 import { pushGamification } from '@/lib/gamificationSync'
-import { createCalendarEvent, isCalendarConnected } from '@/lib/googleCalendar'
+import { isCalendarConnected, createCalendarEvent } from '@/lib/googleCalendar'
 
-// ── Realtime hook ─────────────────────────────────────────────
 export function useTasks(userId, filter = 'today') {
   const [tasks, setTasks] = useState([])
   const today = TODAY()
 
   const fetchTasks = useCallback(async () => {
     if (!userId || !supabase) return
-    const { data } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('user_id', userId)
-      .order('due_date', { ascending: true })
-    if (data) {
-      let filtered = data
-      if (filter === 'today')
-        filtered = data.filter(t => (t.due_date === today || !t.due_date) && t.status === 'pending')
-      else if (filter === 'upcoming')
-        filtered = data.filter(t => t.due_date > today && t.status === 'pending')
-      setTasks(filtered)
-    }
+    let q = supabase.from('tasks').select('*').eq('user_id', userId)
+    if (filter === 'today')
+      q = q.eq('due_date', today).eq('status', 'pending')
+    else if (filter === 'upcoming')
+      q = q.gt('due_date', today).eq('status', 'pending')
+    const { data, error } = await q.order('due_date')
+    if (error) { console.error('useTasks:', error); return }
+    if (data) setTasks(data)
   }, [userId, filter, today])
 
   useEffect(() => {
     fetchTasks()
     if (!supabase || !userId) return
-    const sub = supabase
-      .channel(`tasks_${userId}_${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` }, () => fetchTasks())
-      .subscribe()
-    return () => { supabase.removeChannel(sub) }
+    const ch = supabase.channel(`tasks_${userId}_${Math.random()}`)
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` },
+      () => fetchTasks()
+    ).subscribe()
+    return () => { supabase.removeChannel(ch) }
   }, [userId, filter, fetchTasks])
 
   return tasks
 }
 
 export async function addTask({ title, priority, dueDate, dueTime, endTime, notes, userId }) {
-  if (!supabase) return
+  if (!supabase || !userId) { console.error('addTask: missing supabase or userId'); return }
   const record = {
-    id: uuid(), user_id: userId, title,
-    notes: notes || '', priority: priority || 'medium',
+    id: uuid(), user_id: userId,
+    title: title.trim(),
+    notes: notes || '',
+    priority: priority || 'medium',
     status: 'pending',
     due_date: dueDate || TODAY(),
     due_time: dueTime || null,
@@ -53,11 +49,15 @@ export async function addTask({ title, priority, dueDate, dueTime, endTime, note
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
-  await supabase.from('tasks').insert(record)
-  if (isCalendarConnected()) {
-    const startDateTime = dueTime ? `${record.due_date}T${dueTime}:00` : null
-    createCalendarEvent({ title, priority: record.priority, dueDate: record.due_date, notes: record.notes, startDateTime })
-      .catch(() => {})
+  const { error } = await supabase.from('tasks').insert(record)
+  if (error) { console.error('addTask error:', error); return }
+  if (isCalendarConnected() && dueTime) {
+    createCalendarEvent({
+      title: record.title, priority: record.priority,
+      dueDate: record.due_date, notes: record.notes,
+      startDateTime: `${record.due_date}T${dueTime}:00`,
+      endDateTime: endTime ? `${record.due_date}T${endTime}:00` : null,
+    }).catch(() => {})
   }
 }
 
@@ -79,12 +79,16 @@ export async function toggleTask(id) {
 
 export async function updateTask(id, fields) {
   if (!supabase) return
-  await supabase.from('tasks').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', id)
+  const { error } = await supabase.from('tasks')
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) console.error('updateTask:', error)
 }
 
 export async function deleteTask(id) {
   if (!supabase) return
-  await supabase.from('tasks').delete().eq('id', id)
+  const { error } = await supabase.from('tasks').delete().eq('id', id)
+  if (error) console.error('deleteTask:', error)
 }
 
 export function scheduleTaskNotification(task) {

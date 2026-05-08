@@ -1,26 +1,36 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { uuid } from '@/lib/db'
 import { TODAY } from '@/lib/utils'
 
-export function useJournalEntries(userId) {
-  const [entries, setEntries] = useState([])
-  const fetch = useCallback(async () => {
-    if (!userId || !supabase) return
-    const { data } = await supabase.from('journal_entries').select('*')
-      .eq('user_id', userId).order('updated_at', { ascending: false })
-    if (data) setEntries(data)
-  }, [userId])
+function useSupabaseTable(table, userId, query = null) {
+  const [data, setData] = useState([])
 
   useEffect(() => {
+    if (!userId || !supabase) return
+    const fetch = async () => {
+      const q = query
+        ? query(supabase.from(table).select('*').eq('user_id', userId))
+        : supabase.from(table).select('*').eq('user_id', userId)
+      const { data: rows } = await q
+      if (rows) setData(rows)
+    }
     fetch()
-    if (!supabase || !userId) return
-    const sub = supabase
-      .channel(`journal_${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'journal_entries', filter: `user_id=eq.${userId}` }, () => fetch())
-      .subscribe()
-    return () => { supabase.removeChannel(sub) }
-  }, [userId, fetch])
+    const channel = supabase.channel(`${table}_${userId}_${Math.random()}`)
+    channel.on('postgres_changes',
+      { event: '*', schema: 'public', table, filter: `user_id=eq.${userId}` },
+      () => fetch()
+    ).subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [userId])
+
+  return data
+}
+
+export function useJournalEntries(userId) {
+  const entries = useSupabaseTable('journal_entries', userId,
+    q => q.order('updated_at', { ascending: false })
+  )
   return entries
 }
 
@@ -40,11 +50,12 @@ export async function createJournalEntry({ userId, date, content, prompt, title 
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
-  await supabase.from('journal_entries').insert(record)
+  const { error } = await supabase.from('journal_entries').insert(record)
+  if (error) { console.error('createJournalEntry:', error); return null }
   return record.id
 }
 
-export async function updateJournalEntry(id, { content, title, userId }) {
+export async function updateJournalEntry(id, { content, title }) {
   if (!supabase) return
   const wordCount = content.replace(/<[^>]*>/g, '').trim().split(/\s+/).filter(Boolean).length
   await supabase.from('journal_entries').update({
@@ -59,15 +70,17 @@ export async function deleteJournalEntry(id) {
 }
 
 export function useSleepLogs(userId, days = 30) {
-  const [logs, setLogs] = useState([])
-  const fetch = useCallback(async () => {
+  return useSupabaseTable('sleep_logs', userId, q => q.order('log_date', { ascending: false }).limit(days))
+}
+
+export function useSleepLog(userId, date) {
+  const [log, setLog] = useState(null)
+  useEffect(() => {
     if (!userId || !supabase) return
-    const { data } = await supabase.from('sleep_logs').select('*')
-      .eq('user_id', userId).order('log_date', { ascending: false }).limit(days)
-    if (data) setLogs(data)
-  }, [userId, days])
-  useEffect(() => { fetch() }, [fetch])
-  return logs
+    supabase.from('sleep_logs').select('*').eq('user_id', userId).eq('log_date', date).single()
+      .then(({ data }) => setLog(data || null))
+  }, [userId, date])
+  return log
 }
 
 export async function saveSleepLog({ userId, date, hours }) {
@@ -79,14 +92,4 @@ export async function saveSleepLog({ userId, date, hours }) {
   } else {
     await supabase.from('sleep_logs').insert({ id: uuid(), user_id: userId, log_date: date, hours, updated_at: new Date().toISOString() })
   }
-}
-
-export function useSleepLog(userId, date) {
-  const [log, setLog] = useState(null)
-  useEffect(() => {
-    if (!userId || !supabase) return
-    supabase.from('sleep_logs').select('*').eq('user_id', userId).eq('log_date', date).single()
-      .then(({ data }) => setLog(data || null))
-  }, [userId, date])
-  return log
 }

@@ -15,10 +15,11 @@ export function useJournalEntries(userId) {
   useEffect(() => {
     fetch()
     if (!supabase || !userId) return
-    const sub = supabase.channel(`journal_${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'journal_entries', filter: `user_id=eq.${userId}` }, fetch)
+    const sub = supabase
+      .channel(`journal_${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'journal_entries', filter: `user_id=eq.${userId}` }, () => fetch())
       .subscribe()
-    return () => supabase.removeChannel(sub)
+    return () => { supabase.removeChannel(sub) }
   }, [userId, fetch])
   return entries
 }

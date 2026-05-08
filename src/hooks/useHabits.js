@@ -18,10 +18,11 @@ export function useHabits(userId) {
   useEffect(() => {
     fetch()
     if (!supabase || !userId) return
-    const sub = supabase.channel(`habits_${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'habits', filter: `user_id=eq.${userId}` }, fetch)
+    const sub = supabase
+      .channel(`habits_${userId}_${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'habits', filter: `user_id=eq.${userId}` }, () => fetch())
       .subscribe()
-    return () => supabase.removeChannel(sub)
+    return () => { supabase.removeChannel(sub) }
   }, [userId, fetch])
   return habits
 }
@@ -39,10 +40,11 @@ export function useTodayLogs(userId) {
   useEffect(() => {
     fetch()
     if (!supabase || !userId) return
-    const sub = supabase.channel(`habit_logs_today_${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'habit_logs', filter: `user_id=eq.${userId}` }, fetch)
+    const sub = supabase
+      .channel(`habit_logs_today_${userId}_${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'habit_logs', filter: `user_id=eq.${userId}` }, () => fetch())
       .subscribe()
-    return () => supabase.removeChannel(sub)
+    return () => { supabase.removeChannel(sub) }
   }, [userId, fetch])
   return logs
 }
@@ -61,10 +63,11 @@ export function useHabitLogs(userId, month, year) {
   useEffect(() => {
     fetch()
     if (!supabase || !userId) return
-    const sub = supabase.channel(`habit_logs_month_${userId}_${month}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'habit_logs', filter: `user_id=eq.${userId}` }, fetch)
+    const sub = supabase
+      .channel(`habit_logs_month_${userId}_${month}_${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'habit_logs', filter: `user_id=eq.${userId}` }, () => fetch())
       .subscribe()
-    return () => supabase.removeChannel(sub)
+    return () => { supabase.removeChannel(sub) }
   }, [userId, month, year, fetch])
   return logs
 }

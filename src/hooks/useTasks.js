@@ -32,11 +32,10 @@ export function useTasks(userId, filter = 'today') {
     fetchTasks()
     if (!supabase || !userId) return
     const sub = supabase
-      .channel(`tasks_${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` },
-        () => fetchTasks())
+      .channel(`tasks_${userId}_${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` }, () => fetchTasks())
       .subscribe()
-    return () => supabase.removeChannel(sub)
+    return () => { supabase.removeChannel(sub) }
   }, [userId, filter, fetchTasks])
 
   return tasks

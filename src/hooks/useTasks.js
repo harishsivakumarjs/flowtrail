@@ -38,6 +38,7 @@ export function useTasks(userId, filter = 'today') {
 export async function addTask({ title, priority, dueDate, dueTime, endTime, notes, userId }) {
   if (!supabase) { console.error('addTask: supabase not initialized'); return }
   if (!userId)   { console.error('addTask: userId missing'); return }
+  // Build record - only include columns that exist in Supabase schema
   const record = {
     id: uuid(),
     user_id: userId,
@@ -46,11 +47,12 @@ export async function addTask({ title, priority, dueDate, dueTime, endTime, note
     priority: priority || 'medium',
     status: 'pending',
     due_date: dueDate || TODAY(),
-    due_time: dueTime || null,
-    end_time: endTime || null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
+  // Add optional time fields only if they have values
+  if (dueTime) record.due_time = dueTime
+  if (endTime) record.end_time = endTime
   const { error } = await supabase.from('tasks').insert(record)
   if (error) { console.error('addTask insert error:', error); return }
   notifyTasks()

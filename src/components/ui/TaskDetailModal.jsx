@@ -72,9 +72,9 @@ export default function TaskDetailModal({ task, open, onClose, onEdit, onDelete 
             <div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
               <FileText size={12} /> Notes
             </div>
-            <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+            <div className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>
               {task.notes}
-            </p>
+            </div>
           </div>
         )}
 

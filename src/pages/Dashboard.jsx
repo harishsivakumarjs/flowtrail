@@ -11,6 +11,8 @@ import { format } from 'date-fns'
 import { useGamificationStore, getLevel } from '@/store/gamificationStore'
 import { useDopamineStore } from '@/store/dopamineStore'
 import XPBar from '@/components/ui/XPBar'
+import StickyNote from '@/components/ui/StickyNote'
+import TaskDetailModal from '@/components/ui/TaskDetailModal'
 import { FocusScoreBadge } from '@/components/ui/FocusScore'
 import PlanMyDay from '@/components/ui/PlanMyDay'
 
@@ -69,6 +71,7 @@ export default function Dashboard() {
   const today    = TODAY()
   const navigate = useNavigate()
   const [showPlan, setShowPlan] = useState(false)
+  const [selectedTask, setSelectedTask] = useState(null)
 
   const habits    = useHabits(userId)
   const todayLogs = useTodayLogs(userId)
@@ -132,100 +135,106 @@ export default function Dashboard() {
           sub={level.label} icon={Trophy} color="var(--amber)" />
       </div>
 
+      {/* Top row: Sticky note + Tasks */}
       <div className="grid md:grid-cols-2 gap-4">
-        {/* Habits */}
+        {/* Sticky Note */}
+        <StickyNote />
+
+        {/* Tasks */}
         <div className="card">
           <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Today's habits</span>
-            <Link to="/dashboard/habits" className="text-xs flex items-center gap-1" style={{ color: 'var(--brand)' }}>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Today's tasks</span>
+            <Link to="/dashboard/tasks" className="text-xs flex items-center gap-1" style={{ color: 'var(--brand)' }}>
               View all <ChevronRight size={13} />
             </Link>
           </div>
           <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-            {habits.length === 0 && (
-              <div className="px-4 py-8 text-center">
-                <p className="text-sm mb-3" style={{ color: 'var(--text-muted)' }}>No habits yet</p>
-                <Link to="/dashboard/habits" className="btn btn-primary text-sm inline-flex"><Plus size={14} /> Add first habit</Link>
+            {pendingTasks.length === 0 && (
+              <div className="px-4 py-5 text-center">
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No tasks today</p>
               </div>
             )}
-            {habits.slice(0, 7).map(habit => {
-              const log  = logMap[habit.id]
-              const done = log?.completed === true
-              return (
-                <div key={habit.id}
-                  className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[var(--bg-overlay)] transition-colors"
-                  onClick={() => toggleHabitLog(habit.id, userId)}>
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${done ? 'border-[var(--green)] bg-[var(--green)]' : 'border-[var(--border-mid)]'}`}>
-                    {done && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                  </div>
-                  <span className={`text-sm flex-1 ${done ? 'line-through opacity-50' : ''}`} style={{ color: 'var(--text-primary)' }}>
-                    {habit.icon} {habit.name}
-                  </span>
-                  {done && <span className="text-xs" style={{ color: 'var(--green)' }}>+10xp</span>}
-                </div>
-              )
-            })}
-          </div>
-          <div className="px-4 py-3 border-t" style={{ borderColor: 'var(--border)' }}>
-            <SleepInput userId={userId} />
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          {/* Tasks */}
-          <div className="card">
-            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Today's tasks</span>
-              <Link to="/dashboard/tasks" className="text-xs flex items-center gap-1" style={{ color: 'var(--brand)' }}>
-                View all <ChevronRight size={13} />
-              </Link>
-            </div>
-            <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-              {pendingTasks.length === 0 && (
-                <div className="px-4 py-5 text-center">
-                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No tasks today</p>
-                </div>
-              )}
-              {pendingTasks.slice(0, 5).map(task => (
-                <div key={task.id}
-                  className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-[var(--bg-overlay)] transition-colors"
-                  onClick={() => toggleTask(task.id)}>
-                  <div className="w-4 h-4 rounded border-2 flex-shrink-0" style={{ borderColor: 'var(--border-mid)' }} />
-                  <span className="text-sm flex-1" style={{ color: 'var(--text-primary)' }}>{task.title}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-md font-medium badge-${task.priority}`}>{task.priority}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Heatmap */}
-          <div className="card px-4 py-3">
-            <div className="text-xs font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>30-day habit heatmap</div>
-            <div className="flex flex-wrap gap-1">
-              {days.map(day => {
-                const dateStr = fmt(day)
-                const count   = logsByDate[dateStr] || 0
-                const level   = Math.min(4, Math.ceil((count / maxPerDay) * 4))
-                const isToday = dateStr === today
-                return (
-                  <div key={dateStr} title={`${format(day, 'MMM d')}: ${count} habits`}
-                    className={`w-5 h-5 rounded-sm transition-colors ${isToday ? 'ring-2 ring-[var(--brand)]' : ''} heat-${level}`} />
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Keyboard shortcuts hint */}
-          <div className="rounded-xl px-3 py-2.5 flex items-center gap-3"
-            style={{ background: 'var(--bg-overlay)' }}>
-            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Shortcuts:</span>
-            <kbd className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-raised)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>N</kbd>
-            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Plan day</span>
-            <kbd className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-raised)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>F</kbd>
-            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Focus mode</span>
+            {pendingTasks.slice(0, 5).map(task => (
+              <div key={task.id}
+                className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg-overlay)] transition-colors cursor-pointer"
+                onClick={() => setSelectedTask(task)}>
+                <div onClick={e => { e.stopPropagation(); toggleTask(task.id) }}
+                  className="w-4 h-4 rounded border-2 flex-shrink-0 hover:border-[var(--brand)] transition-colors"
+                  style={{ borderColor: 'var(--border-mid)' }} />
+                <span className="text-sm flex-1" style={{ color: 'var(--text-primary)' }}>{task.title}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-md font-medium badge-${task.priority}`}>{task.priority}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
+
+      {/* Habits — full width below */}
+      <div className="card">
+        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Today's habits</span>
+          <Link to="/dashboard/habits" className="text-xs flex items-center gap-1" style={{ color: 'var(--brand)' }}>
+            View all <ChevronRight size={13} />
+          </Link>
+        </div>
+        <div className="grid md:grid-cols-2 divide-y md:divide-y-0" style={{ borderColor: 'var(--border)' }}>
+          {habits.length === 0 && (
+            <div className="px-4 py-8 text-center col-span-2">
+              <p className="text-sm mb-3" style={{ color: 'var(--text-muted)' }}>No habits yet</p>
+              <Link to="/dashboard/habits" className="btn btn-primary text-sm inline-flex"><Plus size={14} /> Add first habit</Link>
+            </div>
+          )}
+          {habits.slice(0, 8).map(habit => {
+            const log  = logMap[habit.id]
+            const done = log?.completed === true
+            return (
+              <div key={habit.id}
+                className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[var(--bg-overlay)] transition-colors"
+                onClick={() => toggleHabitLog(habit.id, userId)}>
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${done ? 'border-[var(--green)] bg-[var(--green)]' : 'border-[var(--border-mid)]'}`}>
+                  {done && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                </div>
+                <span className={`text-sm flex-1 ${done ? 'line-through opacity-50' : ''}`} style={{ color: 'var(--text-primary)' }}>
+                  {habit.icon} {habit.name}
+                </span>
+                {done && <span className="text-xs" style={{ color: 'var(--green)' }}>+10xp</span>}
+              </div>
+            )
+          })}
+        </div>
+        <div className="px-4 py-3 border-t" style={{ borderColor: 'var(--border)' }}>
+          <SleepInput userId={userId} />
+        </div>
+      </div>
+
+      {/* Heatmap + shortcuts */}
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="card px-4 py-3">
+          <div className="text-xs font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>30-day habit heatmap</div>
+          <div className="flex flex-wrap gap-1">
+            {days.map(day => {
+              const dateStr = fmt(day)
+              const count   = logsByDate[dateStr] || 0
+              const level   = Math.min(4, Math.ceil((count / maxPerDay) * 4))
+              const isToday = dateStr === today
+              return (
+                <div key={dateStr} title={`${format(day, 'MMM d')}: ${count} habits`}
+                  className={`w-5 h-5 rounded-sm transition-colors ${isToday ? 'ring-2 ring-[var(--brand)]' : ''} heat-${level}`} />
+              )
+            })}
+          </div>
+        </div>
+        <div className="rounded-xl px-3 py-2.5 flex items-center gap-3 self-start"
+          style={{ background: 'var(--bg-overlay)' }}>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Shortcuts:</span>
+          <kbd className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-raised)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>N</kbd>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Plan day</span>
+          <kbd className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-raised)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>F</kbd>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Focus mode</span>
+        </div>
+      </div>
+
+      <TaskDetailModal task={selectedTask} open={!!selectedTask} onClose={() => setSelectedTask(null)} />
 
       <PlanMyDay open={showPlan} onClose={() => setShowPlan(false)} />
     </div>

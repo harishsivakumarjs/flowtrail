@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { uuid } from '@/lib/db'
 import { TODAY } from '@/lib/utils'
-import { useGamificationStore } from '@/store/gamificationStore'
-import { pushGamification } from '@/lib/gamificationSync'
 
 // Global state so all components share the same data
 let habitsListeners = []
@@ -81,18 +79,12 @@ export async function toggleHabitLog(habitId, userId) {
     await supabase.from('habit_logs').update({
       completed: !existing.completed, updated_at: new Date().toISOString()
     }).eq('id', existing.id)
-    if (!existing.completed) {
-      useGamificationStore.getState().recordHabitDone()
-      pushGamification(userId)
-    }
   } else {
     await supabase.from('habit_logs').insert({
       id: uuid(), habit_id: habitId, user_id: userId,
       log_date: today, completed: true,
       updated_at: new Date().toISOString(),
     })
-    useGamificationStore.getState().recordHabitDone()
-    pushGamification(userId)
   }
   notifyHabitLogs()
 }

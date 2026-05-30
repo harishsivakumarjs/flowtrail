@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/appStore'
 import { supabase } from '@/lib/supabase'
-import { pushGamification, pullGamification } from '@/lib/gamificationSync'
-import { useGamificationStore } from '@/store/gamificationStore'
 
 import AppShell     from '@/components/layout/AppShell'
 import Landing      from '@/pages/Landing'
@@ -15,7 +13,8 @@ import Calendar     from '@/pages/Calendar'
 import Journal      from '@/pages/Journal'
 import Analytics    from '@/pages/Analytics'
 import Settings     from '@/pages/Settings'
-import Focus        from '@/pages/Focus'
+import Notes           from '@/pages/Notes'
+import PasswordManager from '@/pages/PasswordManager'
 
 // Shows landing if not logged in, dashboard if logged in
 function HomeRoute() {
@@ -50,7 +49,7 @@ function ProtectedRoute({ children }) {
 }
 
 export default function App() {
-  const { user, setUser, applyTheme, setSyncing, setLastSync } = useAppStore()
+  const { user, setUser, applyTheme } = useAppStore()
   const navigate = useNavigate()
 
   useEffect(() => { applyTheme() }, [])
@@ -74,13 +73,6 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  useEffect(() => {
-    if (!user?.id || user?.demo || !supabase) return
-    pullGamification(user.id)
-    const gami = setInterval(() => pushGamification(user.id), 30000)
-    return () => clearInterval(gami)
-  }, [user?.id])
-
   return (
     <>
       <Routes>
@@ -96,7 +88,8 @@ export default function App() {
           <Route path="calendar"   element={<Calendar />} />
           <Route path="journal"    element={<Journal />} />
           <Route path="analytics"  element={<Analytics />} />
-          <Route path="focus"      element={<Focus />} />
+          <Route path="notes"      element={<Notes />} />
+          <Route path="passwords"  element={<PasswordManager />} />
           <Route path="settings"   element={<Settings />} />
         </Route>
 

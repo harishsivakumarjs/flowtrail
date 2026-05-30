@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, ChevronRight, Flame, Moon, CheckSquare2, Zap, Sparkles, Shield, Trophy } from 'lucide-react'
+import { Plus, ChevronRight, Moon, CheckSquare2, Zap, Sparkles } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import { supabase } from '@/lib/supabase'
 import { useHabits, useTodayLogs, toggleHabitLog } from '@/hooks/useHabits'
@@ -8,12 +8,8 @@ import { useTasks, addTask, toggleTask } from '@/hooks/useTasks'
 import { useSleepLog, saveSleepLog } from '@/hooks/useJournal'
 import { greetingByHour, displayDay, TODAY, last30Days, fmt } from '@/lib/utils'
 import { format } from 'date-fns'
-import { useGamificationStore, getLevel } from '@/store/gamificationStore'
-import { useDopamineStore } from '@/store/dopamineStore'
-import XPBar from '@/components/ui/XPBar'
 import StickyNote from '@/components/ui/StickyNote'
 import TaskDetailModal from '@/components/ui/TaskDetailModal'
-import { FocusScoreBadge } from '@/components/ui/FocusScore'
 import PlanMyDay from '@/components/ui/PlanMyDay'
 
 function StatCard({ label, value, sub, color, icon: Icon }) {
@@ -77,9 +73,6 @@ export default function Dashboard() {
   const todayLogs = useTodayLogs(userId)
   const tasks     = useTasks(userId, 'today')
   const sleepLog  = useSleepLog(userId, today)
-  const { xp, totalHabitsDone, totalTasksDone } = useGamificationStore()
-  const { focusScore } = useDopamineStore()
-  const level = getLevel(xp)
 
   const logMap   = Object.fromEntries((todayLogs || []).map(l => [l.habit_id, l]))
   const doneCount = (todayLogs || []).filter(l => l.completed).length
@@ -96,8 +89,6 @@ export default function Dashboard() {
   allLogs.forEach(l => { logsByDate[l.log_date] = (logsByDate[l.log_date] || 0) + 1 })
   const maxPerDay = habits.length || 1
 
-  const focusColor = focusScore >= 75 ? 'var(--green)' : focusScore >= 40 ? 'var(--amber)' : 'var(--red)'
-
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
       {/* Header */}
@@ -107,21 +98,14 @@ export default function Dashboard() {
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>{displayDay(today)}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <FocusScoreBadge />
           <button onClick={() => setShowPlan(true)} className="btn btn-ghost text-sm gap-1.5">
             <Sparkles size={14} /> Plan my day
           </button>
-          <Link to="/dashboard/focus" className="btn btn-primary text-sm gap-1.5">
-            <Shield size={14} /> Start focus
-          </Link>
         </div>
       </div>
 
-      {/* XP bar */}
-      <XPBar compact />
-
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <StatCard label="Habits today" value={`${doneCount}/${habits.length}`}
           sub={habits.length > 0 ? `${Math.round(doneCount/habits.length*100)}% done` : 'Add some habits'}
           icon={Zap} color="var(--brand)" />
@@ -131,8 +115,6 @@ export default function Dashboard() {
         <StatCard label="Sleep" value={sleepLog ? `${sleepLog.hours}h` : '—'}
           sub={sleepLog ? (sleepLog.hours >= 7 ? 'Above goal ✓' : 'Below 7h') : 'Not logged'}
           icon={Moon} color="var(--brand-light)" />
-        <StatCard label={`Level ${level.level}`} value={`${xp}xp`}
-          sub={level.label} icon={Trophy} color="var(--amber)" />
       </div>
 
       {/* Top row: Sticky note + Tasks */}
@@ -197,7 +179,6 @@ export default function Dashboard() {
                 <span className={`text-sm flex-1 ${done ? 'line-through opacity-50' : ''}`} style={{ color: 'var(--text-primary)' }}>
                   {habit.icon} {habit.name}
                 </span>
-                {done && <span className="text-xs" style={{ color: 'var(--green)' }}>+10xp</span>}
               </div>
             )
           })}
@@ -207,30 +188,20 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Heatmap + shortcuts */}
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="card px-4 py-3">
-          <div className="text-xs font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>30-day habit heatmap</div>
-          <div className="flex flex-wrap gap-1">
-            {days.map(day => {
-              const dateStr = fmt(day)
-              const count   = logsByDate[dateStr] || 0
-              const level   = Math.min(4, Math.ceil((count / maxPerDay) * 4))
-              const isToday = dateStr === today
-              return (
-                <div key={dateStr} title={`${format(day, 'MMM d')}: ${count} habits`}
-                  className={`w-5 h-5 rounded-sm transition-colors ${isToday ? 'ring-2 ring-[var(--brand)]' : ''} heat-${level}`} />
-              )
-            })}
-          </div>
-        </div>
-        <div className="rounded-xl px-3 py-2.5 flex items-center gap-3 self-start"
-          style={{ background: 'var(--bg-overlay)' }}>
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Shortcuts:</span>
-          <kbd className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-raised)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>N</kbd>
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Plan day</span>
-          <kbd className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-raised)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>F</kbd>
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Focus mode</span>
+      {/* Heatmap */}
+      <div className="card px-4 py-3">
+        <div className="text-xs font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>30-day habit heatmap</div>
+        <div className="flex flex-wrap gap-1">
+          {days.map(day => {
+            const dateStr = fmt(day)
+            const count   = logsByDate[dateStr] || 0
+            const level   = Math.min(4, Math.ceil((count / maxPerDay) * 4))
+            const isToday = dateStr === today
+            return (
+              <div key={dateStr} title={`${format(day, 'MMM d')}: ${count} habits`}
+                className={`w-5 h-5 rounded-sm transition-colors ${isToday ? 'ring-2 ring-[var(--brand)]' : ''} heat-${level}`} />
+            )
+          })}
         </div>
       </div>
 

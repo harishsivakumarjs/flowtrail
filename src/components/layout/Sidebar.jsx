@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, CheckSquare, CalendarDays,
-  BookOpen, BarChart2, Settings, Zap, X, LogOut, ShieldOff
+  BookOpen, BarChart2, Settings, Zap, X, LogOut, StickyNote, Lock
 } from 'lucide-react'
 import ThemeToggle from '@/components/ui/ThemeToggle'
 import SyncIndicator from '@/components/ui/SyncIndicator'
@@ -12,10 +12,11 @@ const NAV = [
   { to: '/dashboard',           icon: LayoutDashboard, label: 'Dashboard', end: true },
   { to: '/dashboard/habits',    icon: Zap,             label: 'Habits' },
   { to: '/dashboard/tasks',     icon: CheckSquare,     label: 'Tasks' },
+  { to: '/dashboard/notes',     icon: StickyNote,      label: 'Notes' },
   { to: '/dashboard/calendar',  icon: CalendarDays,    label: 'Calendar' },
   { to: '/dashboard/journal',   icon: BookOpen,        label: 'Journal' },
   { to: '/dashboard/analytics', icon: BarChart2,       label: 'Analytics' },
-  { to: '/dashboard/focus',     icon: ShieldOff,       label: 'Focus mode' },
+  { to: '/dashboard/passwords', icon: Lock,            label: 'Passwords' },
   { to: '/dashboard/settings',  icon: Settings,        label: 'Settings' },
 ]
 
@@ -89,7 +90,7 @@ export default function Sidebar({ mobile = false, onClose }) {
           <NavItem
             key={item.to}
             {...item}
-            end={i === 0} // only Dashboard uses exact match
+            end={i === 0}
             onClick={mobile ? onClose : undefined}
           />
         ))}

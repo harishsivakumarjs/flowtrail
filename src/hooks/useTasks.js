@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { uuid } from '@/lib/db'
 import { TODAY } from '@/lib/utils'
-import { useGamificationStore } from '@/store/gamificationStore'
-import { pushGamification } from '@/lib/gamificationSync'
 import { isCalendarConnected, createCalendarEvent } from '@/lib/googleCalendar'
 
 // Global listeners for instant UI updates
@@ -78,10 +76,6 @@ export async function toggleTask(id) {
   }).eq('id', id)
   if (updateError) { console.error('toggleTask update:', updateError); return }
   notifyTasks()
-  if (!isDone) {
-    useGamificationStore.getState().recordTaskDone()
-    pushGamification(data.user_id)
-  }
 }
 
 export async function updateTask(id, fields) {

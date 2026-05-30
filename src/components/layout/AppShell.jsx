@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import FocusScore from '@/components/ui/FocusScore'
-import { Outlet, useNavigate } from 'react-router-dom'
+import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import { Menu } from 'lucide-react'
@@ -9,7 +8,6 @@ import ThemeToggle from '@/components/ui/ThemeToggle'
 export default function AppShell() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [drawerOpen, setDrawer] = useState(false)
-  const navigate = useNavigate()
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 768)
@@ -63,7 +61,6 @@ export default function AppShell() {
 
         {isMobile && <BottomNav />}
       </div>
-      <FocusScore />
     </div>
   )
 }

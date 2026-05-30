@@ -3,9 +3,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { format, subDays, eachDayOfInterval, startOfWeek, endOfWeek } from 'date-fns'
 import { useAppStore } from '@/store/appStore'
 import { supabase } from '@/lib/supabase'
-import { Flame, TrendingUp, BookOpen, Moon, Trophy, Star } from 'lucide-react'
-import { useGamificationStore, getLevel, BADGES } from '@/store/gamificationStore'
-import XPBar from '@/components/ui/XPBar'
+import { Flame, TrendingUp, BookOpen, Moon } from 'lucide-react'
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
@@ -36,8 +34,6 @@ function StatCard({ label, value, sub, icon: Icon, color }) {
 export default function Analytics() {
   const { user } = useAppStore()
   const userId   = user?.id
-  const { xp, earnedBadges, totalHabitsDone, totalTasksDone, totalSessions } = useGamificationStore()
-  const level = getLevel(xp)
 
   const [habits, setHabits]                 = useState([])
   const [habitLogs, setHabitLogs]           = useState([])
@@ -53,7 +49,6 @@ export default function Analytics() {
     supabase.from('journal_entries').select('*').eq('user_id', userId).then(({ data }) => data && setJournalEntries(data))
     supabase.from('tasks').select('*').eq('user_id', userId).then(({ data }) => data && setTasks(data))
   }, [userId])
-
 
   const last30 = useMemo(() => {
     const end = new Date(), start = subDays(end, 29)
@@ -114,15 +109,14 @@ export default function Analytics() {
     ? Math.round(dailyData.reduce((s, d) => s + d.pct, 0) / dailyData.length)
     : 0
 
+  const tasksDone = tasks.filter(t => t.status === 'done').length
+
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-5">
       <div>
         <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Analytics</h1>
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Last 30 days</p>
       </div>
-
-      {/* XP bar */}
-      <XPBar />
 
       {/* Weekly score banner */}
       <div className="card p-5 flex items-center justify-between gap-4"
@@ -149,7 +143,7 @@ export default function Analytics() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="Avg completion" value={`${overallPct}%`} sub="habits/day" icon={TrendingUp} color="var(--brand)" />
         <StatCard label="Avg sleep"      value={`${avgSleep}h`}   sub="per night"  icon={Moon}       color="#8b5cf6" />
-        <StatCard label="Tasks done"     value={totalTasksDone}   sub="all time"   icon={Flame}      color="var(--amber)" />
+        <StatCard label="Tasks done"     value={tasksDone}         sub="all time"   icon={Flame}      color="var(--amber)" />
         <StatCard label="Journal days"   value={journalEntries.length} sub="entries" icon={BookOpen} color="var(--teal)" />
       </div>
 
@@ -223,34 +217,6 @@ export default function Analytics() {
               ))}
             </div>
           )}
-        </div>
-      </div>
-
-      {/* Badges */}
-      <div className="card p-4 md:p-5">
-        <h2 className="text-sm font-medium mb-4" style={{ color: 'var(--text-primary)' }}>
-          Badges — {earnedBadges.length} earned
-        </h2>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          {BADGES.map(badge => {
-            const earned = earnedBadges.includes(badge.id)
-            return (
-              <div key={badge.id}
-                className="flex flex-col items-center gap-1.5 p-3 rounded-xl text-center transition-all"
-                style={{
-                  background: earned ? 'color-mix(in srgb, var(--brand) 10%, transparent)' : 'var(--bg-overlay)',
-                  border: `1px solid ${earned ? 'color-mix(in srgb, var(--brand) 25%, transparent)' : 'var(--border)'}`,
-                  opacity: earned ? 1 : 0.4,
-                }}>
-                <span className="text-2xl">{badge.icon}</span>
-                <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{badge.label}</div>
-                <div className="text-xs" style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{badge.desc}</div>
-                {earned && badge.xp > 0 && (
-                  <div className="text-xs font-medium" style={{ color: 'var(--brand)' }}>+{badge.xp}xp</div>
-                )}
-              </div>
-            )
-          })}
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/appStore'
 import { supabase } from '@/lib/supabase'
 
+import AppLock      from '@/components/ui/AppLock'
 import AppShell     from '@/components/layout/AppShell'
 import Landing      from '@/pages/Landing'
 import AuthCallback from '@/pages/AuthCallback'
@@ -74,7 +75,7 @@ export default function App() {
   }, [])
 
   return (
-    <>
+    <AppLock>
       <Routes>
         {/* Public */}
         <Route path="/"              element={<HomeRoute />} />
@@ -95,6 +96,6 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </>
+    </AppLock>
   )
 }

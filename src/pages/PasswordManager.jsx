@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAppStore } from '@/store/appStore'
+import { PinPad } from '@/components/ui/AppLock'
 import {
   Lock, Plus, Eye, EyeOff, Copy, Search, X, Trash2,
-  Edit2, Check, RefreshCw, Upload, Shield, LogOut, KeyRound,
+  Edit2, Check, RefreshCw, Upload, Shield, KeyRound,
 } from 'lucide-react'
 
 const CATEGORIES = ['General', 'Social', 'Work', 'Banking', 'Shopping']
@@ -118,112 +119,6 @@ function CopyBtn({ text, label }) {
   )
 }
 
-// ── PIN Screen ───────────────────────────────────────────────────────────────
-
-function PinScreen({ onUnlock }) {
-  const [mode]          = useState(() => localStorage.getItem('ft-vault-pin') ? 'enter' : 'create')
-  const [step, setStep]     = useState('enter') // 'enter' | 'confirm'
-  const [pin, setPin]       = useState('')
-  const [pinConfirm, setPinConfirm] = useState('')
-  const [error, setError]   = useState('')
-
-  const current    = mode === 'create' && step === 'confirm' ? pinConfirm : pin
-  const setCurrent = mode === 'create' && step === 'confirm'
-    ? v => setPinConfirm(v)
-    : v => setPin(v)
-
-  const handleSubmit = () => {
-    setError('')
-    if (mode === 'enter') {
-      if (pin === localStorage.getItem('ft-vault-pin')) { onUnlock() }
-      else { setError('Incorrect PIN'); setPin('') }
-      return
-    }
-    // create mode
-    if (step === 'enter') {
-      if (pin.length !== 4) { setError('PIN must be 4 digits'); return }
-      setStep('confirm')
-    } else {
-      if (pin !== pinConfirm) {
-        setError('PINs do not match'); setStep('enter'); setPin(''); setPinConfirm('')
-      } else {
-        localStorage.setItem('ft-vault-pin', pin); onUnlock()
-      }
-    }
-  }
-
-  const handleForgot = async () => {
-    if (!window.confirm('Sign out to reset your PIN?')) return
-    localStorage.removeItem('ft-vault-pin')
-    if (supabase) await supabase.auth.signOut()
-  }
-
-  const headings = {
-    enter:   mode === 'create' ? 'Create vault PIN' : 'Unlock vault',
-    confirm: 'Confirm your PIN',
-  }
-  const heading = headings[step] || headings.enter
-
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4"
-      style={{ background: 'var(--bg-base)' }}>
-      <div className="w-full max-w-xs p-8 rounded-2xl flex flex-col items-center gap-6"
-        style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border)' }}>
-
-        <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
-          style={{ background: 'color-mix(in srgb, var(--brand) 15%, transparent)' }}>
-          <Lock size={26} style={{ color: 'var(--brand)' }} />
-        </div>
-
-        <div className="text-center">
-          <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{heading}</h2>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-            {mode === 'create' ? 'Protect your vault with a 4-digit PIN' : 'Enter your vault PIN to continue'}
-          </p>
-        </div>
-
-        {/* PIN dots */}
-        <div className="flex gap-4">
-          {[0,1,2,3].map(i => (
-            <div key={i} className="w-3.5 h-3.5 rounded-full border-2 transition-all"
-              style={{
-                borderColor: 'var(--brand)',
-                background: current.length > i ? 'var(--brand)' : 'transparent',
-              }} />
-          ))}
-        </div>
-
-        <input
-          type="password"
-          inputMode="numeric"
-          maxLength={4}
-          value={current}
-          onChange={e => setCurrent(e.target.value.replace(/\D/g, '').slice(0, 4))}
-          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-          placeholder="••••"
-          autoFocus
-          className="w-28 text-center text-2xl tracking-widest bg-transparent outline-none border-b-2 pb-1"
-          style={{ borderColor: 'var(--border-mid)', color: 'var(--text-primary)' }}
-        />
-
-        {error && <p className="text-xs" style={{ color: 'var(--red)' }}>{error}</p>}
-
-        <button onClick={handleSubmit}
-          className="btn btn-primary w-full text-sm">
-          {mode === 'create' ? (step === 'enter' ? 'Next →' : 'Create PIN') : 'Unlock'}
-        </button>
-
-        {mode === 'enter' && (
-          <button onClick={handleForgot}
-            className="text-xs flex items-center gap-1.5"
-            style={{ color: 'var(--text-muted)' }}>
-            <LogOut size={12} /> Forgot PIN? Sign out to reset
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
 
 // ── Password modal (add / edit) ───────────────────────────────────────────────
 
@@ -638,11 +533,24 @@ function Vault({ userId, onLock }) {
 
 export default function PasswordManager() {
   const { user } = useAppStore()
-  const userId = user?.id
+  const userId   = user?.id
   const [unlocked, setUnlocked] = useState(false)
 
   if (!unlocked) {
-    return <PinScreen onUnlock={() => setUnlocked(true)} />
+    return (
+      <PinPad
+        pinKey="ft-vault-pin"
+        heading="Vault locked"
+        onUnlock={() => setUnlocked(true)}
+        onForgot={() => {
+          if (!window.confirm('Remove vault PIN protection? Your passwords will not be deleted.')) return
+          localStorage.removeItem('ft-vault-pin')
+          setUnlocked(true)
+        }}
+        forgotLabel="Forgot vault PIN?"
+        zIndex={100}
+      />
+    )
   }
 
   return <Vault userId={userId} onLock={() => setUnlocked(false)} />

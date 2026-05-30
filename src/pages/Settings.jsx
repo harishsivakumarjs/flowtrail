@@ -1,7 +1,150 @@
-import { useState } from 'react'
-import { Sun, Moon, Download, Trash2, AlertTriangle, Github, X } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Sun, Moon, Download, Trash2, AlertTriangle, Github, X, Lock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAppStore } from '@/store/appStore'
+
+// ── 4-box PIN input (used in Settings modals only) ───────────────────────────
+function FourDigitInput({ value, onChange, autoFocus = false }) {
+  const refs = useRef([null, null, null, null])
+
+  const handleChange = (i, e) => {
+    const d = e.target.value.replace(/\D/g, '').slice(-1)
+    if (!d) return
+    const arr = Array.from({ length: 4 }, (_, k) => value[k] || '')
+    arr[i] = d
+    onChange(arr.join(''))
+    if (i < 3) refs.current[i + 1]?.focus()
+  }
+
+  const handleKeyDown = (i, e) => {
+    if (e.key !== 'Backspace') return
+    e.preventDefault()
+    const arr = Array.from({ length: 4 }, (_, k) => value[k] || '')
+    if (arr[i]) {
+      arr[i] = ''
+      onChange(arr.join('').replace(/\s/g, ''))
+    } else if (i > 0) {
+      arr[i - 1] = ''
+      onChange(arr.join('').replace(/\s/g, ''))
+      refs.current[i - 1]?.focus()
+    }
+  }
+
+  return (
+    <div className="flex gap-3 justify-center">
+      {[0, 1, 2, 3].map(i => (
+        <input
+          key={i}
+          ref={el => refs.current[i] = el}
+          type="password"
+          inputMode="numeric"
+          maxLength={1}
+          value={value[i] || ''}
+          onChange={e => handleChange(i, e)}
+          onKeyDown={e => handleKeyDown(i, e)}
+          autoFocus={autoFocus && i === 0}
+          onClick={() => refs.current[i]?.select()}
+          className="w-14 h-14 text-center text-2xl font-bold rounded-xl border-2 outline-none transition-colors"
+          style={{
+            background:   'var(--bg-overlay)',
+            borderColor:  value[i] ? 'var(--brand)' : 'var(--border)',
+            color:        'var(--text-primary)',
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ── PIN setup modal — set / change / disable ─────────────────────────────────
+// mode: 'set' | 'change' | 'disable'
+function PinSetupModal({ mode, onClose, onDone }) {
+  // steps: 'current' → 'new' → 'confirm' (not all steps apply to all modes)
+  const firstStep = mode === 'set' ? 'new' : 'current'
+  const [step, setStep] = useState(firstStep)
+  const [pins, setPins] = useState({ current: '', new: '', confirm: '' })
+  const [error, setError] = useState('')
+
+  const set = (key, val) => setPins(p => ({ ...p, [key]: val }))
+
+  const proceed = () => {
+    setError('')
+    if (step === 'current') {
+      if (pins.current.replace(/\s/g, '').length < 4) { setError('Enter your 4-digit PIN'); return }
+      const stored = localStorage.getItem('ft-lock-pin')
+      if (btoa(pins.current.replace(/\s/g, '')) !== stored) { setError('Incorrect PIN'); set('current', ''); return }
+      if (mode === 'disable') {
+        localStorage.removeItem('ft-lock-pin')
+        localStorage.removeItem('ft-lock-last-active')
+        window.dispatchEvent(new CustomEvent('applock:changed'))
+        onDone(false)
+        return
+      }
+      setStep('new')
+    } else if (step === 'new') {
+      if (pins.new.replace(/\s/g, '').length < 4) { setError('Enter a 4-digit PIN'); return }
+      setStep('confirm')
+    } else if (step === 'confirm') {
+      if (pins.confirm !== pins.new) { setError('PINs do not match'); set('confirm', ''); return }
+      localStorage.setItem('ft-lock-pin', btoa(pins.new))
+      localStorage.setItem('ft-lock-last-active', String(Date.now()))
+      window.dispatchEvent(new CustomEvent('applock:changed'))
+      onDone(true)
+    }
+  }
+
+  const titles = { set: 'Set app lock PIN', change: 'Change PIN', disable: 'Disable app lock' }
+
+  const stepLabel = {
+    current: 'Enter your current PIN',
+    new:     mode === 'set' ? 'Choose a 4-digit PIN' : 'Enter your new PIN',
+    confirm: 'Confirm your new PIN',
+  }[step]
+
+  const pinField = step   // 'current' | 'new' | 'confirm' — matches pins object key
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.6)' }}>
+      <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden"
+        style={{ background: 'var(--bg-raised)', border: '1px solid var(--border)' }}>
+
+        <div className="flex items-center justify-between px-5 py-4 border-b"
+          style={{ borderColor: 'var(--border)' }}>
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {titles[mode]}
+          </h2>
+          <button onClick={onClose} style={{ color: 'var(--text-muted)' }}><X size={16} /></button>
+        </div>
+
+        <div className="px-5 py-7 space-y-5">
+          <p className="text-sm text-center" style={{ color: 'var(--text-secondary)' }}>
+            {stepLabel}
+          </p>
+          <FourDigitInput
+            key={step}           /* re-mount → reset autoFocus on step change */
+            value={pins[pinField]}
+            onChange={val => set(pinField, val)}
+            autoFocus
+          />
+          {error && (
+            <p className="text-xs text-center font-medium" style={{ color: 'var(--red)' }}>
+              {error}
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t"
+          style={{ borderColor: 'var(--border)' }}>
+          <button onClick={onClose} className="btn btn-ghost text-sm">Cancel</button>
+          <button onClick={proceed} className="btn btn-primary text-sm">
+            {step === 'current' && mode === 'disable' ? 'Disable lock' : 'Continue →'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const DATA_TABLES = [
   'notes', 'passwords', 'tasks',
@@ -144,6 +287,20 @@ export default function Settings() {
   const [confirmText, setConfirmText] = useState('')
   const [working, setWorking]       = useState(false)
 
+  // ── Security (app lock) state ────────────────────────────────
+  const [lockEnabled, setLockEnabled] = useState(() => !!localStorage.getItem('ft-lock-pin'))
+  const [pinModal, setPinModal]       = useState(null) // null | 'set' | 'change' | 'disable'
+
+  // Stay in sync when PIN is cleared externally (e.g. "Forgot PIN" from overlay)
+  useEffect(() => {
+    const h = () => setLockEnabled(!!localStorage.getItem('ft-lock-pin'))
+    window.addEventListener('applock:changed', h)
+    return () => window.removeEventListener('applock:changed', h)
+  }, [])
+
+  const handleLockToggle = () => setPinModal(lockEnabled ? 'disable' : 'set')
+  const handlePinDone    = (enabled) => { setLockEnabled(enabled); setPinModal(null) }
+
   const openModal = (type) => { setModal(type); setConfirmText('') }
   const closeModal = () => { setModal(null); setConfirmText('') }
 
@@ -261,6 +418,37 @@ export default function Settings() {
         />
       </Section>
 
+      {/* ── Security ─────────────────────────────────────────── */}
+      <Section title="Security">
+        <Row
+          label="App Lock"
+          sub="Require a PIN when returning to the app after 30 seconds away"
+          action={
+            <button
+              onClick={handleLockToggle}
+              className="relative flex-shrink-0 w-11 h-6 rounded-full transition-colors duration-200"
+              style={{ background: lockEnabled ? 'var(--brand)' : 'var(--border)' }}>
+              <div
+                className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all duration-200"
+                style={{ left: lockEnabled ? '22px' : '2px' }} />
+            </button>
+          }
+        />
+        {lockEnabled && (
+          <Row
+            label="Change PIN"
+            sub="Update your 4-digit app lock PIN"
+            action={
+              <button
+                onClick={() => setPinModal('change')}
+                className="btn btn-ghost text-sm flex items-center gap-2">
+                <Lock size={14} /> Change
+              </button>
+            }
+          />
+        )}
+      </Section>
+
       {/* ── Data ─────────────────────────────────────────────── */}
       <Section title="Data">
         <Row
@@ -351,6 +539,15 @@ export default function Settings() {
           onConfirm={modal === 'clear' ? handleClearData : handleDeleteAccount}
           onClose={closeModal}
           working={working}
+        />
+      )}
+
+      {/* ── PIN setup modal ───────────────────────────────────── */}
+      {pinModal && (
+        <PinSetupModal
+          mode={pinModal}
+          onClose={() => setPinModal(null)}
+          onDone={handlePinDone}
         />
       )}
     </div>

@@ -3,7 +3,6 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/appStore'
 import { supabase } from '@/lib/supabase'
 
-import AppLock      from '@/components/ui/AppLock'
 import AppShell     from '@/components/layout/AppShell'
 import Landing      from '@/pages/Landing'
 import AuthCallback from '@/pages/AuthCallback'
@@ -17,7 +16,6 @@ import Settings     from '@/pages/Settings'
 import Notes           from '@/pages/Notes'
 import PasswordManager from '@/pages/PasswordManager'
 
-// Shows landing if not logged in, dashboard if logged in
 function HomeRoute() {
   const { user } = useAppStore()
   const [ready, setReady] = useState(false)
@@ -55,6 +53,12 @@ export default function App() {
 
   useEffect(() => { applyTheme() }, [])
 
+  // Clean up legacy app-lock keys left from a previous version
+  useEffect(() => {
+    localStorage.removeItem('ft-lock-pin')
+    localStorage.removeItem('ft-lock-last-active')
+  }, [])
+
   useEffect(() => {
     if (!supabase) return
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -75,27 +79,25 @@ export default function App() {
   }, [])
 
   return (
-    <AppLock>
-      <Routes>
-        {/* Public */}
-        <Route path="/"              element={<HomeRoute />} />
-        <Route path="/auth/callback" element={<AuthCallback />} />
+    <Routes>
+      {/* Public */}
+      <Route path="/"              element={<HomeRoute />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
 
-        {/* Protected app */}
-        <Route path="/dashboard" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
-          <Route index             element={<Dashboard />} />
-          <Route path="habits"     element={<Habits />} />
-          <Route path="tasks"      element={<Tasks />} />
-          <Route path="calendar"   element={<Calendar />} />
-          <Route path="journal"    element={<Journal />} />
-          <Route path="analytics"  element={<Analytics />} />
-          <Route path="notes"      element={<Notes />} />
-          <Route path="passwords"  element={<PasswordManager />} />
-          <Route path="settings"   element={<Settings />} />
-        </Route>
+      {/* Protected app */}
+      <Route path="/dashboard" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
+        <Route index             element={<Dashboard />} />
+        <Route path="habits"     element={<Habits />} />
+        <Route path="tasks"      element={<Tasks />} />
+        <Route path="calendar"   element={<Calendar />} />
+        <Route path="journal"    element={<Journal />} />
+        <Route path="analytics"  element={<Analytics />} />
+        <Route path="notes"      element={<Notes />} />
+        <Route path="passwords"  element={<PasswordManager />} />
+        <Route path="settings"   element={<Settings />} />
+      </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </AppLock>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   )
 }

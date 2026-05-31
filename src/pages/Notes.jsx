@@ -226,10 +226,15 @@ export default function Notes() {
   const [showFolderInput, setShowFolderInput] = useState(false)
   const [newFolderName, setNewFolderName]     = useState('')
   const [customFolders, setCustomFolders] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('ft-notes-folders') || '[]') } catch { return [] }
+    try {
+      const stored = JSON.parse(localStorage.getItem('ft-notes-folders') || '[]')
+      // Seed default folders on first load (migration-safe: if empty, inject defaults)
+      return stored.length ? stored : [...DEFAULT_FOLDERS]
+    } catch { return [...DEFAULT_FOLDERS] }
   })
 
-  const allFolders = ['All', ...DEFAULT_FOLDERS, ...customFolders.filter(f => !DEFAULT_FOLDERS.includes(f))]
+  // 'All' is always first; everything else is in customFolders and can be deleted
+  const allFolders = ['All', ...customFolders]
 
   // ── Fetch ──────────────────────────────────────────────────────
   const fetchNotes = useCallback(async () => {
@@ -313,6 +318,21 @@ export default function Notes() {
     setNewFolderName('')
   }
 
+  const deleteFolder = async (name) => {
+    if (!window.confirm(`Delete folder "${name}"? Notes inside will be moved to All.`)) return
+    // Move all notes in this folder → 'All'
+    if (userId && supabase) {
+      await supabase.from('notes')
+        .update({ folder: 'All', updated_at: new Date().toISOString() })
+        .eq('user_id', userId).eq('folder', name)
+    }
+    const updated = customFolders.filter(f => f !== name)
+    setCustomFolders(updated)
+    localStorage.setItem('ft-notes-folders', JSON.stringify(updated))
+    if (activeFolder === name) setActiveFolder('All')
+    await fetchNotes()
+  }
+
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       <div>
@@ -321,17 +341,41 @@ export default function Notes() {
 
       {/* ── Folder chips ─────────────────────────────────────────── */}
       <div className="flex items-center gap-2 flex-wrap">
-        {allFolders.map(f => (
-          <button key={f} onClick={() => setActiveFolder(f)}
-            className="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
-            style={{
-              background: activeFolder === f ? 'var(--brand)' : 'var(--bg-overlay)',
-              color: activeFolder === f ? '#fff' : 'var(--text-secondary)',
-              border: `1px solid ${activeFolder === f ? 'transparent' : 'var(--border)'}`,
-            }}>
-            {f}
-          </button>
-        ))}
+        {allFolders.map(f =>
+          f === 'All' ? (
+            // "All" chip — no delete
+            <button key={f} onClick={() => setActiveFolder(f)}
+              className="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
+              style={{
+                background: activeFolder === f ? 'var(--brand)' : 'var(--bg-overlay)',
+                color:      activeFolder === f ? '#fff'         : 'var(--text-secondary)',
+                border:     `1px solid ${activeFolder === f ? 'transparent' : 'var(--border)'}`,
+              }}>
+              All
+            </button>
+          ) : (
+            // Deletable folder chip — name + × button
+            <span key={f}
+              className="flex items-center rounded-full overflow-hidden text-xs font-medium transition-all"
+              style={{
+                background: activeFolder === f ? 'var(--brand)' : 'var(--bg-overlay)',
+                border:     `1px solid ${activeFolder === f ? 'transparent' : 'var(--border)'}`,
+              }}>
+              <button onClick={() => setActiveFolder(f)}
+                className="pl-3 pr-2 py-1.5"
+                style={{ color: activeFolder === f ? '#fff' : 'var(--text-secondary)' }}>
+                {f}
+              </button>
+              <button
+                onClick={e => { e.stopPropagation(); deleteFolder(f) }}
+                title={`Delete folder "${f}"`}
+                className="pr-2.5 py-1.5 flex items-center transition-opacity hover:opacity-75"
+                style={{ color: activeFolder === f ? 'rgba(255,255,255,0.65)' : 'var(--text-muted)' }}>
+                <X size={10} />
+              </button>
+            </span>
+          )
+        )}
 
         {showFolderInput ? (
           <div className="flex items-center gap-1">

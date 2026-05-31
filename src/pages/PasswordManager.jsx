@@ -90,6 +90,34 @@ function getVaultPassHash() {
   return localStorage.getItem('ft-vault-pass')
 }
 
+// ── Supabase vault sync ───────────────────────────────────────────────────────
+// Loads vault credentials from Supabase user metadata and caches into localStorage
+// so they work on any device / incognito tab.
+async function initVaultData() {
+  if (!supabase) return
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    const meta = user?.user_metadata || {}
+    // If Supabase has a vault_pass, it is the source of truth
+    if (meta.vault_pass) {
+      localStorage.setItem('ft-vault-pass', meta.vault_pass)
+    }
+    if (meta.vault_security) {
+      localStorage.setItem('ft-vault-security', meta.vault_security)
+    }
+  } catch { /* silent — fall back to localStorage */ }
+}
+
+async function saveVaultToSupabase(passHash, securityEncoded) {
+  if (!supabase) return
+  const update = {}
+  if (passHash !== undefined)       update.vault_pass     = passHash
+  if (securityEncoded !== undefined) update.vault_security = securityEncoded
+  if (Object.keys(update).length) {
+    await supabase.auth.updateUser({ data: update })
+  }
+}
+
 // ── Shared sub-components ─────────────────────────────────────────────────────
 
 function SiteFavicon({ url, name }) {
@@ -168,11 +196,17 @@ function SetNewPasswordScreen({ onSaved, onCancel, title = 'Set vault password' 
   const [confirm, setConfirm] = useState('')
   const [error,   setError]   = useState('')
 
-  const save = () => {
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
     const err = validateVaultPassword(pw)
     if (err) { setError(err); return }
     if (pw !== confirm) { setError('Passwords do not match'); return }
-    localStorage.setItem('ft-vault-pass', btoa(pw))
+    setSaving(true)
+    const hash = btoa(pw)
+    localStorage.setItem('ft-vault-pass', hash)
+    await saveVaultToSupabase(hash, undefined)
+    setSaving(false)
     onSaved()
   }
 
@@ -186,8 +220,8 @@ function SetNewPasswordScreen({ onSaved, onCancel, title = 'Set vault password' 
       <StrengthBar password={pw} />
       <PwInput value={confirm} onChange={v => { setConfirm(v); setError('') }} placeholder="Confirm password" onEnter={save} />
       {error && <p className="text-xs text-center" style={{ color: 'var(--red)' }}>{error}</p>}
-      <button onClick={save} className="btn btn-primary w-full">Save password</button>
-      {onCancel && <button onClick={onCancel} className="btn btn-ghost w-full">Cancel</button>}
+      <button onClick={save} disabled={saving} className="btn btn-primary w-full">{saving ? 'Saving…' : 'Save password'}</button>
+      {onCancel && <button onClick={onCancel} disabled={saving} className="btn btn-ghost w-full">Cancel</button>}
     </div>
   )
 }
@@ -209,10 +243,11 @@ function SecurityRecoveryScreen({ onResetDone, onBack }) {
         <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
           This vault was created without security questions. Remove the vault password to regain access — your saved passwords will not be deleted.
         </p>
-        <button onClick={() => {
+        <button onClick={async () => {
           localStorage.removeItem('ft-vault-pass')
           localStorage.removeItem('ft-vault-pin')
           localStorage.removeItem('ft-vault-security')
+          await saveVaultToSupabase(null, null)
           onResetDone()
         }} className="btn btn-primary w-full mb-2">Remove vault password</button>
         <button onClick={onBack} className="btn btn-ghost w-full">← Back</button>
@@ -359,18 +394,21 @@ function VaultSetupModal({ onClose, onSaved }) {
     setStep('questions')
   }
 
-  const save = () => {
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
     setError('')
     if (!a1.trim()) { setError('Please answer question 1'); return }
     if (!a2.trim()) { setError('Please answer question 2'); return }
     if (q1 === q2)  { setError('Please choose two different questions'); return }
-    // Save password
-    localStorage.setItem('ft-vault-pass', btoa(pw))
-    // Save security Q&A (answers stored lowercased + encoded)
-    localStorage.setItem('ft-vault-security', btoa(JSON.stringify({
-      q1, a1: btoa(a1.toLowerCase().trim()),
-      q2, a2: btoa(a2.toLowerCase().trim()),
-    })))
+    setSaving(true)
+    const passHash = btoa(pw)
+    const secObj   = { q1, a1: btoa(a1.toLowerCase().trim()), q2, a2: btoa(a2.toLowerCase().trim()) }
+    const secEnc   = btoa(JSON.stringify(secObj))
+    localStorage.setItem('ft-vault-pass',     passHash)
+    localStorage.setItem('ft-vault-security', secEnc)
+    await saveVaultToSupabase(passHash, secEnc)
+    setSaving(false)
     onSaved()
   }
 
@@ -443,9 +481,9 @@ function VaultSetupModal({ onClose, onSaved }) {
           {step === 'questions' && (
             <button onClick={() => { setStep('password'); setError('') }} className="btn btn-ghost text-sm">← Back</button>
           )}
-          <button onClick={onClose} className="btn btn-ghost text-sm">Cancel</button>
-          <button onClick={step === 'password' ? nextStep : save} className="btn btn-primary text-sm">
-            {step === 'password' ? 'Next →' : 'Save vault'}
+          <button onClick={onClose} disabled={saving} className="btn btn-ghost text-sm">Cancel</button>
+          <button onClick={step === 'password' ? nextStep : save} disabled={saving} className="btn btn-primary text-sm">
+            {step === 'password' ? 'Next →' : saving ? 'Saving…' : 'Save vault'}
           </button>
         </div>
       </div>
@@ -775,14 +813,25 @@ export default function PasswordManager() {
   const { user } = useAppStore()
   const userId = user?.id
 
-  // Support both old (ft-vault-pin) and new (ft-vault-pass) storage keys
-  const [hasPin, setHasPin] = useState(() =>
+  const [hasPin,    setHasPin]    = useState(() =>
     !!localStorage.getItem('ft-vault-pass') || !!localStorage.getItem('ft-vault-pin')
   )
-  const [unlocked, setUnlocked] = useState(() =>
+  const [unlocked,  setUnlocked]  = useState(() =>
     !localStorage.getItem('ft-vault-pass') && !localStorage.getItem('ft-vault-pin')
   )
-  const [showSetup, setShowSetup] = useState(false)
+  const [showSetup,  setShowSetup]  = useState(false)
+  const [syncLoading, setSyncLoading] = useState(true)
+
+  // On mount: pull vault credentials from Supabase so they work on any device/incognito
+  useEffect(() => {
+    if (!userId) { setSyncLoading(false); return }
+    initVaultData().then(() => {
+      const hasVault = !!localStorage.getItem('ft-vault-pass') || !!localStorage.getItem('ft-vault-pin')
+      setHasPin(hasVault)
+      if (!hasVault) setUnlocked(true)
+      setSyncLoading(false)
+    })
+  }, [userId])
 
   const handleUnlock = () => setUnlocked(true)
   const handleLock   = () => setUnlocked(false)
@@ -790,6 +839,17 @@ export default function PasswordManager() {
   const handlePinSaved = () => {
     setHasPin(true)
     setShowSetup(false)
+  }
+
+  if (syncLoading) {
+    return (
+      <div className="flex items-center justify-center" style={{ minHeight: 'calc(100vh - 60px)', background: 'var(--bg-base)' }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'var(--brand)', borderTopColor: 'transparent' }} />
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Syncing vault…</p>
+        </div>
+      </div>
+    )
   }
 
   if (hasPin && !unlocked) {

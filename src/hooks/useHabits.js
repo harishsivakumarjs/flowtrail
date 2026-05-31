@@ -55,7 +55,9 @@ export function useHabitLogs(userId, month, year) {
   const fetch = useCallback(async () => {
     if (!userId || !supabase) return
     const start = `${year}-${String(month).padStart(2,'0')}-01`
-    const end   = `${year}-${String(month).padStart(2,'0')}-31`
+    // Extend end to 7th of next month to cover overflow days shown in the grid
+    const overflow = new Date(year, month, 7) // month is 1-indexed; JS auto-rolls Dec→Jan
+    const end = `${overflow.getFullYear()}-${String(overflow.getMonth() + 1).padStart(2,'0')}-${String(overflow.getDate()).padStart(2,'0')}`
     const { data } = await supabase.from('habit_logs').select('*')
       .eq('user_id', userId).gte('log_date', start).lte('log_date', end)
     if (data) setLogs(data)

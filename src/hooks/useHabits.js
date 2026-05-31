@@ -70,11 +70,11 @@ export function useHabitLogs(userId, month, year) {
   return logs
 }
 
-export async function toggleHabitLog(habitId, userId) {
+export async function toggleHabitLog(habitId, userId, date) {
   if (!supabase) return
-  const today = TODAY()
+  const logDate = date || TODAY()
   const { data: existing } = await supabase.from('habit_logs').select('*')
-    .eq('habit_id', habitId).eq('user_id', userId).eq('log_date', today).single()
+    .eq('habit_id', habitId).eq('user_id', userId).eq('log_date', logDate).single()
   if (existing) {
     await supabase.from('habit_logs').update({
       completed: !existing.completed, updated_at: new Date().toISOString()
@@ -82,7 +82,7 @@ export async function toggleHabitLog(habitId, userId) {
   } else {
     await supabase.from('habit_logs').insert({
       id: uuid(), habit_id: habitId, user_id: userId,
-      log_date: today, completed: true,
+      log_date: logDate, completed: true,
       updated_at: new Date().toISOString(),
     })
   }

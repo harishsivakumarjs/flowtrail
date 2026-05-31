@@ -1,13 +1,14 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
-import { Plus, Flame, Trash2, Edit2 } from 'lucide-react'
+import { Plus, Flame, Trash2, Edit2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { format, getDaysInMonth } from 'date-fns'
 import { useAppStore } from '@/store/appStore'
 import { useHabits, useHabitLogs, toggleHabitLog, addHabit, updateHabit, archiveHabit } from '@/hooks/useHabits'
 import Modal from '@/components/ui/Modal'
+import MonthYearPicker from '@/components/ui/MonthYearPicker'
 import { TODAY } from '@/lib/utils'
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
-  CartesianGrid, Tooltip, ResponsiveContainer, Legend
+  CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 
 const COLORS = ['#5254e7','#22c55e','#f59e0b','#ef4444','#ec4899','#14b8a6','#8b5cf6','#f97316']
@@ -96,32 +97,34 @@ function AddHabitModal({ open, onClose, userId, editing = null }) {
 }
 
 // ── Habit row with synced scroll ─────────────────────────────
-function HabitRowScrolled({ habit, userId, logs, daysInMonth, today, cellW, onScroll, isFirst, scrollRef }) {
+function HabitRowScrolled({ habit, userId, logs, daysInMonth, viewDate, isCurrentMonth, cellW, onScroll, isFirst }) {
   const [showEdit, setShowEdit] = useState(false)
   const rowScrollRef = useRef(null)
-  const yearStr  = format(today, 'yyyy')
-  const monthStr = format(today, 'MM')
+  const realToday = new Date()
+  const yearStr   = format(viewDate, 'yyyy')
+  const monthStr  = format(viewDate, 'MM')
+  const todayStr  = format(realToday, 'yyyy-MM-dd')
 
   const logMap = {}
   logs.forEach(l => { if (l.habit_id === habit.id) logMap[l.log_date] = l.completed })
 
-  // Streak
+  // Streak only meaningful for current month view
   let streak = 0
-  let d = new Date(today)
-  while (true) {
-    const ds = format(d, 'yyyy-MM-dd')
-    if (logMap[ds]) { streak++; d = new Date(d.getTime() - 86400000) }
-    else break
+  if (isCurrentMonth) {
+    let d = new Date(realToday)
+    while (true) {
+      const ds = format(d, 'yyyy-MM-dd')
+      if (logMap[ds]) { streak++; d = new Date(d.getTime() - 86400000) }
+      else break
+    }
   }
 
-  // Give first row's ref to parent for auto-scroll
   useEffect(() => {
     if (isFirst && rowScrollRef.current) {
-      const todayDay = today.getDate()
-      const offset = Math.max(0, (todayDay - 4) * cellW)
+      const offset = isCurrentMonth ? Math.max(0, (realToday.getDate() - 4) * cellW) : 0
       rowScrollRef.current.scrollLeft = offset
     }
-  }, [isFirst])
+  }, [isFirst, isCurrentMonth])
 
   return (
     <>
@@ -147,12 +150,12 @@ function HabitRowScrolled({ habit, userId, logs, daysInMonth, today, cellW, onSc
             const day = i + 1
             const ds  = `${yearStr}-${monthStr}-${String(day).padStart(2,'0')}`
             const done    = logMap[ds] === true
-            const isToday = ds === format(today, 'yyyy-MM-dd')
+            const isToday = ds === todayStr
             return (
               <div key={day}
                 title={format(new Date(ds + 'T00:00'), 'MMM d')}
-                onClick={() => toggleHabitLog(habit.id, userId)}
-                className="flex-shrink-0 cursor-pointer rounded-md transition-all"
+                onClick={() => toggleHabitLog(habit.id, userId, ds)}
+                className="flex-shrink-0 cursor-pointer rounded-md transition-all hover:opacity-80"
                 style={{
                   width:  cellW - 2,
                   height: cellW - 2,
@@ -163,7 +166,7 @@ function HabitRowScrolled({ habit, userId, logs, daysInMonth, today, cellW, onSc
                   border: isToday
                     ? '2px solid var(--brand)'
                     : '1.5px solid transparent',
-                  opacity: ds > format(today, 'yyyy-MM-dd') ? 0.3 : 1,
+                  opacity: ds > todayStr ? 0.3 : 1,
                 }} />
             )
           })}
@@ -197,35 +200,32 @@ const CustomTooltip = ({ active, payload, label }) => {
 }
 
 // ── Habit charts ──────────────────────────────────────────────
-function HabitCharts({ habits, logs, daysInMonth }) {
-  const today      = new Date()
-  const daysPassed = Math.min(today.getDate(), daysInMonth)
+function HabitCharts({ habits, logs, daysInMonth, viewDate }) {
+  const today = new Date()
+  const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+  const viewMonthStart    = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1)
+  const isCurrentMonth    = viewMonthStart.getTime() === currentMonthStart.getTime()
+  const isPastMonth       = viewMonthStart < currentMonthStart
+  const daysPassed = isCurrentMonth
+    ? Math.min(today.getDate(), daysInMonth)
+    : isPastMonth ? daysInMonth : 0
 
   const stats = useMemo(() => {
     return habits.map(h => {
       const done  = logs.filter(l => l.habit_id === h.id && l.completed).length
-      const goal  = h.goal_value || 30  // user-defined goal days
+      const goal  = h.goal_value || 30
       const pct   = goal > 0 ? Math.min(100, Math.round(done / goal * 100)) : 0
       const shortName = h.name.length > 10 ? h.name.slice(0, 9) + '…' : h.name
-      return {
-        name:      `${h.icon} ${shortName}`,
-        fullName:  `${h.icon} ${h.name}`,
-        done,
-        goal,
-        pct,
-        color:     h.color || '#5254e7',
-      }
+      return { name: `${h.icon} ${shortName}`, fullName: `${h.icon} ${h.name}`, done, goal, pct, color: h.color || '#5254e7' }
     })
   }, [habits, logs])
 
-  // Pie: completed vs missed vs remaining (based on goals)
-  const totalGoal   = habits.reduce((s, h) => s + (h.goal_value || 30), 0)
-  const totalDone   = logs.filter(l => l.completed).length
-  const totalMissed = Math.max(0, habits.length * daysPassed - totalDone)
-  const overallPct  = totalGoal > 0 ? Math.min(100, Math.round(totalDone / totalGoal * 100)) : 0
+  const totalGoal  = habits.reduce((s, h) => s + (h.goal_value || 30), 0)
+  const totalDone  = logs.filter(l => l.completed).length
+  const overallPct = totalGoal > 0 ? Math.min(100, Math.round(totalDone / totalGoal * 100)) : 0
 
   const pieData = [
-    { name: 'Completed', value: totalDone,   color: '#22c55e' },
+    { name: 'Completed', value: totalDone, color: '#22c55e' },
     { name: 'Remaining', value: Math.max(0, totalGoal - totalDone), color: 'var(--border-mid)' },
   ].filter(d => d.value > 0)
 
@@ -250,16 +250,12 @@ function HabitCharts({ habits, logs, daysInMonth }) {
 
   return (
     <div className="mt-4">
-      {/* Side by side on desktop, stacked on mobile */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-        {/* LEFT — Pie chart */}
         <div className="card p-4 md:p-5">
-          <h2 className="text-sm font-medium mb-0.5" style={{ color: 'var(--text-primary)' }}>
-            Monthly overview
-          </h2>
+          <h2 className="text-sm font-medium mb-0.5" style={{ color: 'var(--text-primary)' }}>Monthly overview</h2>
           <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-            {format(today, 'MMMM yyyy')} · vs combined goals
+            {format(viewDate, 'MMMM yyyy')} · vs combined goals
           </p>
           <div className="flex flex-col items-center gap-5">
             <div className="relative">
@@ -267,9 +263,7 @@ function HabitCharts({ habits, logs, daysInMonth }) {
                 <PieChart>
                   <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={88}
                     dataKey="value" startAngle={90} endAngle={-270} strokeWidth={0}>
-                    {pieData.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
-                    ))}
+                    {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
                 </PieChart>
@@ -295,11 +289,8 @@ function HabitCharts({ habits, logs, daysInMonth }) {
           </div>
         </div>
 
-        {/* RIGHT — Vertical bar chart (goal-based) */}
         <div className="card p-4 md:p-5">
-          <h2 className="text-sm font-medium mb-0.5" style={{ color: 'var(--text-primary)' }}>
-            Per-habit progress
-          </h2>
+          <h2 className="text-sm font-medium mb-0.5" style={{ color: 'var(--text-primary)' }}>Per-habit progress</h2>
           <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
             % of each habit's personal goal this month
           </p>
@@ -312,14 +303,10 @@ function HabitCharts({ habits, logs, daysInMonth }) {
                 tickLine={false} axisLine={false} />
               <Tooltip content={<GoalTooltip />} />
               <Bar dataKey="pct" radius={[4,4,0,0]} maxBarSize={40} shape={CustomBar}>
-                {stats.map((s, i) => (
-                  <Cell key={i} fill={s.pct >= 100 ? '#22c55e' : s.color} />
-                ))}
+                {stats.map((s, i) => <Cell key={i} fill={s.pct >= 100 ? '#22c55e' : s.color} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-
-          {/* Summary table */}
           <div className="mt-3 space-y-1.5 max-h-40 overflow-y-auto">
             {stats.map((s, i) => (
               <div key={i} className="flex items-center gap-2">
@@ -344,55 +331,74 @@ export default function Habits() {
   const userId   = user?.id
   const [showAdd, setShowAdd] = useState(false)
   const today    = new Date()
-  const month    = today.getMonth() + 1
-  const year     = today.getFullYear()
 
-  const habits       = useHabits(userId)
-  const logs         = useHabitLogs(userId, month, year)
-  const daysInMonth  = getDaysInMonth(today)
-  const dayLabels    = Array.from({ length: daysInMonth }, (_, i) => i + 1)
+  // Month navigation
+  const [viewDate, setViewDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
+  const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+  const viewMonthStart    = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1)
+  const isCurrentMonth    = viewMonthStart.getTime() === currentMonthStart.getTime()
+  const isPastMonth       = viewMonthStart < currentMonthStart
 
-  // Shared scroll ref — header + all rows scroll together
-  const scrollRef    = useRef(null)
-  const headerRef    = useRef(null)
-  const todayDay     = today.getDate()
-  const CELL_W       = 26 // px per day cell
+  const month    = viewDate.getMonth() + 1
+  const year     = viewDate.getFullYear()
 
-  // Sync horizontal scroll between header and rows
+  const habits      = useHabits(userId)
+  const logs        = useHabitLogs(userId, month, year)
+  const daysInMonth = getDaysInMonth(viewDate)
+  const dayLabels   = Array.from({ length: daysInMonth }, (_, i) => i + 1)
+
+  const scrollRef  = useRef(null)
+  const headerRef  = useRef(null)
+  const todayDay   = today.getDate()
+  const CELL_W     = 26
+
   const isSyncing = useRef(false)
   const onScroll = useCallback((e) => {
     if (isSyncing.current) return
     isSyncing.current = true
     const left = e.target.scrollLeft
-    // Sync header
     if (headerRef.current) headerRef.current.scrollLeft = left
-    // Sync all habit rows
     document.querySelectorAll('.habit-scroll').forEach(el => {
       if (el !== e.target) el.scrollLeft = left
     })
     requestAnimationFrame(() => { isSyncing.current = false })
   }, [])
 
-  // Auto-scroll to today on mount
   useEffect(() => {
     if (!scrollRef.current) return
-    const offset = Math.max(0, (todayDay - 4) * CELL_W)
+    const offset = isCurrentMonth ? Math.max(0, (todayDay - 4) * CELL_W) : 0
     scrollRef.current.scrollLeft = offset
     document.querySelectorAll('.habit-scroll').forEach(el => { el.scrollLeft = offset })
-  }, [habits.length, todayDay])
+  }, [habits.length, todayDay, isCurrentMonth, viewDate])
+
+  const goToPrevMonth = () => setViewDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
+  const goToNextMonth = () => setViewDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Habits</h1>
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            {format(today, 'MMMM yyyy')} · {habits.length} habits
-          </p>
+          <div className="flex items-center gap-1 mt-1">
+            <button onClick={goToPrevMonth}
+              className="p-1 rounded-lg hover:bg-[var(--bg-overlay)] transition-colors"
+              style={{ color: 'var(--text-muted)' }}>
+              <ChevronLeft size={16} />
+            </button>
+            <MonthYearPicker value={viewDate} onChange={setViewDate} />
+            <button onClick={goToNextMonth}
+              className="p-1 rounded-lg hover:bg-[var(--bg-overlay)] transition-colors"
+              style={{ color: 'var(--text-muted)' }}>
+              <ChevronRight size={16} />
+            </button>
+            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>· {habits.length} habits</span>
+          </div>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
-          <Plus size={15} /> Add habit
-        </button>
+        {!isPastMonth && (
+          <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+            <Plus size={15} /> Add habit
+          </button>
+        )}
       </div>
 
       {/* Habit grid */}
@@ -400,13 +406,15 @@ export default function Habits() {
         {habits.length === 0 ? (
           <div className="py-16 text-center">
             <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>No habits yet</p>
-            <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
-              <Plus size={15} /> Add your first habit
-            </button>
+            {!isPastMonth && (
+              <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+                <Plus size={15} /> Add your first habit
+              </button>
+            )}
           </div>
         ) : (
           <div className="p-4">
-            {/* Sticky header row with synced scroll */}
+            {/* Sticky header row */}
             <div className="flex items-center gap-3 mb-2 pb-2 border-b" style={{ borderColor: 'var(--border)' }}>
               <div className="w-28 md:w-44 flex-shrink-0 text-xs" style={{ color: 'var(--text-muted)' }}>Habit</div>
               <div ref={headerRef}
@@ -422,7 +430,7 @@ export default function Habits() {
                         width: CELL_W,
                         color: isToday ? 'var(--brand)' : 'var(--text-muted)',
                         fontSize: '10px',
-                        fontWeight: isToday ? 700 : 400
+                        fontWeight: isToday ? 700 : 400,
                       }}>
                       {d}
                     </div>
@@ -440,7 +448,8 @@ export default function Habits() {
                   userId={userId}
                   logs={logs}
                   daysInMonth={daysInMonth}
-                  today={today}
+                  viewDate={viewDate}
+                  isCurrentMonth={isCurrentMonth}
                   cellW={CELL_W}
                   onScroll={onScroll}
                   isFirst={idx === 0}
@@ -452,7 +461,7 @@ export default function Habits() {
       </div>
 
       {/* Charts */}
-      <HabitCharts habits={habits} logs={logs} daysInMonth={daysInMonth} />
+      <HabitCharts habits={habits} logs={logs} daysInMonth={daysInMonth} viewDate={viewDate} />
 
       <AddHabitModal open={showAdd} onClose={() => setShowAdd(false)} userId={userId} />
     </div>

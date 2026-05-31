@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Calendar, Clock, Edit2, CalendarClock, CheckCircle2 } from 'lucide-react'
+import { Plus, Trash2, Calendar, Clock, Edit2, CalendarClock, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import { addTask, toggleTask, deleteTask, updateTask } from '@/hooks/useTasks'
 import { supabase } from '@/lib/supabase'
 import Modal from '@/components/ui/Modal'
 import TimeInput from '@/components/ui/TimeInput'
 import TaskDetailModal from '@/components/ui/TaskDetailModal'
+import MonthYearPicker from '@/components/ui/MonthYearPicker'
 import { TODAY } from '@/lib/utils'
-import { format, addDays, isAfter, isBefore, parseISO, startOfDay } from 'date-fns'
+import { format, addDays } from 'date-fns'
 
 const PRIORITIES = ['high', 'medium', 'low']
 const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 }
@@ -22,11 +23,9 @@ function useAllTasks(userId) {
   }, [userId])
   useEffect(() => {
     fetch()
-    // Poll every 3s as fallback
     const t = setInterval(fetch, 3000)
     return () => clearInterval(t)
   }, [fetch])
-  // expose refetch
   return [tasks, fetch]
 }
 
@@ -185,7 +184,6 @@ function TaskRow({ task, onSelect, onEdit, onReschedule, onDelete }) {
     <div className={`flex items-start gap-3 p-3 rounded-xl transition-all group card mb-2 cursor-pointer
       ${isDone ? 'opacity-50' : ''}`}
       onClick={() => onSelect(task)}>
-      {/* Checkbox */}
       <button onClick={e => { e.stopPropagation(); toggleTask(task.id) }}
         className={`w-5 h-5 rounded border-2 flex-shrink-0 mt-0.5 flex items-center justify-center transition-all
           ${isDone ? 'border-[var(--green)] bg-[var(--green)]' : 'border-[var(--border-mid)] hover:border-[var(--brand)]'}`}>
@@ -228,16 +226,42 @@ export default function Tasks() {
   const [selectedTask, setSelectedTask] = useState(null)
   const [filter, setFilter]             = useState('today')
 
-  const today = TODAY()
+  const realToday = new Date()
+  const today     = TODAY()
+
+  // Month navigation
+  const [viewDate, setViewDate] = useState(new Date(realToday.getFullYear(), realToday.getMonth(), 1))
+  const currentMonthStart = new Date(realToday.getFullYear(), realToday.getMonth(), 1)
+  const viewMonthStart    = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1)
+  const isCurrentMonth    = viewMonthStart.getTime() === currentMonthStart.getTime()
+  const viewYM = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`
+
+  const goToPrevMonth = () => {
+    const next = new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1)
+    setViewDate(next)
+    const isCurrent = next.getFullYear() === realToday.getFullYear() && next.getMonth() === realToday.getMonth()
+    const isPast    = next < currentMonthStart
+    setFilter(isCurrent ? 'today' : isPast ? 'overdue' : 'upcoming')
+  }
+
+  const goToNextMonth = () => {
+    const next = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1)
+    setViewDate(next)
+    const isCurrent = next.getFullYear() === realToday.getFullYear() && next.getMonth() === realToday.getMonth()
+    setFilter(isCurrent ? 'today' : 'upcoming')
+  }
+
+  // Month-scoped pool: current month shows all tasks, other months filter by due_date prefix
+  const monthPool = isCurrentMonth
+    ? allTasks
+    : allTasks.filter(t => t.due_date?.startsWith(viewYM))
 
   // Filter logic
-  const todayTasks    = allTasks.filter(t => t.status === 'pending' && (t.due_date === today || !t.due_date))
-  const upcomingTasks = allTasks.filter(t => t.status === 'pending' && t.due_date > today)
-  // All pending = overdue tasks (past, not completed) — NOT future
-  const overdueTasks  = allTasks.filter(t => t.status === 'pending' && t.due_date && t.due_date < today)
-  const completedTasks = allTasks.filter(t => t.status === 'done')
+  const todayTasks     = monthPool.filter(t => t.status === 'pending' && (t.due_date === today || !t.due_date))
+  const upcomingTasks  = monthPool.filter(t => t.status === 'pending' && t.due_date && t.due_date > today)
+  const overdueTasks   = monthPool.filter(t => t.status === 'pending' && t.due_date && t.due_date < today)
+  const completedTasks = monthPool.filter(t => t.status === 'done')
 
-  // Sort each group by date then time
   const sortByDateTime = arr => [...arr].sort((a, b) => {
     const da = a.due_date || '', db = b.due_date || ''
     if (da !== db) return da.localeCompare(db)
@@ -246,9 +270,9 @@ export default function Tasks() {
     return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
   })
 
-  const todaySorted    = sortByDateTime(todayTasks)
-  const upcomingSorted = sortByDateTime(upcomingTasks)
-  const overdueSorted  = sortByDateTime(overdueTasks).reverse() // most recent overdue first
+  const todaySorted     = sortByDateTime(todayTasks)
+  const upcomingSorted  = sortByDateTime(upcomingTasks)
+  const overdueSorted   = sortByDateTime(overdueTasks).reverse()
   const completedSorted = [...completedTasks].sort((a,b) => (b.completed_at||'').localeCompare(a.completed_at||''))
 
   const FILTERS = [
@@ -281,14 +305,46 @@ export default function Tasks() {
       }, {})
     : null
 
+  const subtitle = isCurrentMonth
+    ? `${todayTasks.length} today · ${overdueTasks.length > 0 ? `${overdueTasks.length} overdue` : 'none overdue'}`
+    : `${monthPool.length} task${monthPool.length !== 1 ? 's' : ''} in ${format(viewDate, 'MMMM yyyy')}`
+
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Tasks</h1>
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            {todayTasks.length} today · {overdueTasks.length > 0 ? `${overdueTasks.length} overdue` : 'none overdue'}
-          </p>
+          <div className="flex items-center gap-1 mt-1">
+            <button onClick={goToPrevMonth}
+              className="p-1 rounded-lg hover:bg-[var(--bg-overlay)] transition-colors"
+              style={{ color: 'var(--text-muted)' }}>
+              <ChevronLeft size={16} />
+            </button>
+            <MonthYearPicker
+              value={viewDate}
+              onChange={(newDate) => {
+                setViewDate(newDate)
+                const isCurrent = newDate.getFullYear() === realToday.getFullYear() && newDate.getMonth() === realToday.getMonth()
+                const isPast    = newDate < currentMonthStart
+                setFilter(isCurrent ? 'today' : isPast ? 'overdue' : 'upcoming')
+              }}
+            />
+            <button onClick={goToNextMonth}
+              className="p-1 rounded-lg hover:bg-[var(--bg-overlay)] transition-colors"
+              style={{ color: 'var(--text-muted)' }}>
+              <ChevronRight size={16} />
+            </button>
+            {!isCurrentMonth && (
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                · {monthPool.length} task{monthPool.length !== 1 ? 's' : ''}
+              </span>
+            )}
+            {isCurrentMonth && (
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                · {todayTasks.length} today
+              </span>
+            )}
+          </div>
         </div>
         <button className="btn btn-primary" onClick={() => { setEditingTask(null); setShowAdd(true) }}>
           <Plus size={15}/> Add task
@@ -317,10 +373,10 @@ export default function Tasks() {
           <p className="text-sm mb-3" style={{ color: 'var(--text-muted)' }}>
             {filter === 'today' ? 'No tasks for today' :
              filter === 'upcoming' ? 'No upcoming tasks' :
-             filter === 'overdue' ? 'No overdue tasks — you\'re all caught up!' :
+             filter === 'overdue' ? "No overdue tasks — you're all caught up!" :
              'No completed tasks yet'}
           </p>
-          {filter === 'today' && (
+          {filter === 'today' && isCurrentMonth && (
             <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
               <Plus size={15}/> Add your first task
             </button>

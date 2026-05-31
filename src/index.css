@@ -115,6 +115,12 @@ body {
 
 .input-base::placeholder { color: var(--text-muted); }
 
+/* select options inherit background from their container in dark mode */
+.input-base option {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

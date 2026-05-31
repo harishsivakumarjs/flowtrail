@@ -3,13 +3,33 @@ import { supabase } from '@/lib/supabase'
 import { useAppStore } from '@/store/appStore'
 import {
   Lock, Plus, Eye, EyeOff, Copy, Search, X, Trash2,
-  Edit2, Check, RefreshCw, Upload, Shield, KeyRound, Delete,
+  Edit2, Check, RefreshCw, Upload, Shield, KeyRound, ChevronDown,
 } from 'lucide-react'
 
 const CATEGORIES = ['General', 'Social', 'Work', 'Banking', 'Shopping']
 const EMPTY_FORM  = { site_name: '', site_url: '', username: '', password: '', notes: '', category: 'General' }
 
+const SECURITY_QUESTIONS = [
+  "What was the name of your first pet?",
+  "What city were you born in?",
+  "What is your mother's maiden name?",
+  "What was the name of your elementary school?",
+  "What was your childhood nickname?",
+  "What is the name of the street you grew up on?",
+  "What was the make and model of your first car?",
+  "What is your oldest sibling's middle name?",
+]
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function validateVaultPassword(pw) {
+  if (!pw || pw.length < 8) return 'At least 8 characters required'
+  if (!/[a-z]/.test(pw))        return 'Add a lowercase letter (a-z)'
+  if (!/[A-Z]/.test(pw))        return 'Add an uppercase letter (A-Z)'
+  if (!/[0-9]/.test(pw))        return 'Add a number (0-9)'
+  if (!/[^a-zA-Z0-9]/.test(pw)) return 'Add a special character (!@#$…)'
+  return null
+}
 
 function getStrength(pw) {
   if (!pw) return { level: 0, label: '', color: '' }
@@ -61,275 +81,13 @@ function parseCSV(text) {
   }).filter(r => r.site_name && r.password)
 }
 
-// ── Vault PIN screen (numpad) ─────────────────────────────────────────────────
-
-function VaultPinScreen({ onUnlock, onForgot }) {
-  const [digits, setDigits]     = useState('')
-  const [shake, setShake]       = useState(false)
-  const [error, setError]       = useState('')
-  const [attempts, setAttempts] = useState(0)
-  const [lockedOut, setLockedOut] = useState(false)
-  const [countdown, setCountdown] = useState(0)
-  const timerRef = useRef(null)
-
-  useEffect(() => () => clearInterval(timerRef.current), [])
-
-  const triggerShake = () => {
-    setShake(true)
-    setTimeout(() => { setShake(false); setDigits('') }, 600)
-  }
-
-  const startLockout = () => {
-    setLockedOut(true)
-    setCountdown(60)
-    timerRef.current = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current)
-          setLockedOut(false)
-          setAttempts(0)
-          setDigits('')
-          setError('')
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-  }
-
-  // Auto-verify when 4 digits entered
-  useEffect(() => {
-    if (digits.length !== 4) return
-    const t = setTimeout(() => {
-      if (btoa(digits) === localStorage.getItem('ft-vault-pin')) {
-        onUnlock()
-        return
-      }
-      triggerShake()
-      const next = attempts + 1
-      setAttempts(next)
-      if (next >= 5) {
-        setError('')
-        startLockout()
-      } else {
-        setError('Incorrect PIN')
-      }
-    }, 80)
-    return () => clearTimeout(t)
-  }, [digits]) // eslint-disable-line
-
-  // Keyboard support
-  useEffect(() => {
-    const h = (e) => {
-      if (lockedOut) return
-      if (e.key >= '0' && e.key <= '9') setDigits(p => p.length < 4 ? p + e.key : p)
-      if (e.key === 'Backspace') setDigits(p => p.slice(0, -1))
-    }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [lockedOut])
-
-  const press = (d) => { if (!lockedOut) setDigits(p => p.length < 4 ? p + d : p) }
-  const del   = ()  => { if (!lockedOut) setDigits(p => p.slice(0, -1)) }
-
-  return (
-    <div className="flex flex-col items-center justify-center select-none"
-      style={{ minHeight: 'calc(100vh - 60px)', background: 'var(--bg-base)' }}>
-
-      <style>{`
-        @keyframes vault-shake {
-          0%,100%{transform:translateX(0)}
-          15%{transform:translateX(-10px)}
-          30%{transform:translateX(10px)}
-          45%{transform:translateX(-7px)}
-          60%{transform:translateX(7px)}
-          75%{transform:translateX(-4px)}
-          90%{transform:translateX(4px)}
-        }
-        .vault-shake{animation:vault-shake .5s ease-in-out}
-      `}</style>
-
-      {/* Icon */}
-      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
-        style={{ background: 'color-mix(in srgb, var(--brand) 12%, transparent)' }}>
-        <Lock size={28} style={{ color: 'var(--brand)' }} />
-      </div>
-
-      <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-        Vault PIN
-      </h2>
-      <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
-        Enter your PIN to access passwords
-      </p>
-
-      {/* 4 dot indicators */}
-      <div className={`flex gap-5 mb-4 ${shake ? 'vault-shake' : ''}`}>
-        {[0,1,2,3].map(i => (
-          <div key={i}
-            className="w-4 h-4 rounded-full border-2 transition-all duration-100"
-            style={{
-              borderColor: 'var(--brand)',
-              background:  i < digits.length ? 'var(--brand)' : 'transparent',
-              transform:   i < digits.length ? 'scale(1.1)'   : 'scale(1)',
-            }} />
-        ))}
-      </div>
-
-      {/* Status line */}
-      <div className="h-7 mb-4 flex items-center justify-center">
-        {lockedOut && (
-          <p className="text-sm font-medium" style={{ color: 'var(--red)' }}>
-            Too many attempts — wait {countdown}s
-          </p>
-        )}
-        {!lockedOut && error && (
-          <p className="text-sm" style={{ color: 'var(--red)' }}>{error}</p>
-        )}
-        {!lockedOut && !error && attempts > 0 && (
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {5 - attempts} attempt{5 - attempts !== 1 ? 's' : ''} remaining
-          </p>
-        )}
-      </div>
-
-      {/* Numpad */}
-      <div className="grid grid-cols-3 gap-3">
-        {[1,2,3,4,5,6,7,8,9].map(n => (
-          <button key={n} onClick={() => press(String(n))} disabled={lockedOut}
-            className="w-[72px] h-[72px] rounded-2xl text-xl font-medium transition-all active:scale-90"
-            style={{
-              background: 'var(--bg-overlay)',
-              color:      'var(--text-primary)',
-              border:     '1px solid var(--border)',
-              opacity:    lockedOut ? 0.4 : 1,
-            }}>
-            {n}
-          </button>
-        ))}
-        <div />
-        <button onClick={() => press('0')} disabled={lockedOut}
-          className="w-[72px] h-[72px] rounded-2xl text-xl font-medium transition-all active:scale-90"
-          style={{
-            background: 'var(--bg-overlay)',
-            color:      'var(--text-primary)',
-            border:     '1px solid var(--border)',
-            opacity:    lockedOut ? 0.4 : 1,
-          }}>
-          0
-        </button>
-        <button onClick={del} disabled={lockedOut || digits.length === 0}
-          className="w-[72px] h-[72px] rounded-2xl flex items-center justify-center transition-all active:scale-90"
-          style={{
-            background: 'var(--bg-overlay)',
-            border:     '1px solid var(--border)',
-            opacity:    lockedOut || digits.length === 0 ? 0.35 : 1,
-          }}>
-          <Delete size={20} style={{ color: 'var(--text-secondary)' }} />
-        </button>
-      </div>
-
-      <button onClick={onForgot} className="mt-10 text-sm" style={{ color: 'var(--text-muted)' }}>
-        Forgot PIN?
-      </button>
-    </div>
-  )
+function getSecurityData() {
+  try { return JSON.parse(atob(localStorage.getItem('ft-vault-security') || '')) }
+  catch { return null }
 }
 
-// ── Vault PIN setup modal (4-box inputs) ──────────────────────────────────────
-
-function PinBox({ value, onChange }) {
-  const refs = useRef([null, null, null, null])
-  return (
-    <div className="flex gap-3 justify-center">
-      {[0,1,2,3].map(i => (
-        <input key={i} ref={el => refs.current[i] = el}
-          type="password" inputMode="numeric" maxLength={1}
-          value={value[i] || ''}
-          autoFocus={i === 0}
-          onChange={e => {
-            const d = e.target.value.replace(/\D/g, '').slice(-1)
-            if (!d) return
-            const arr = Array.from({length:4}, (_,k) => value[k] || '')
-            arr[i] = d
-            onChange(arr.join(''))
-            if (i < 3) refs.current[i+1]?.focus()
-          }}
-          onKeyDown={e => {
-            if (e.key !== 'Backspace') return
-            e.preventDefault()
-            const arr = Array.from({length:4}, (_,k) => value[k] || '')
-            if (arr[i]) { arr[i] = ''; onChange(arr.join('').replace(/\s/g, '')) }
-            else if (i > 0) { arr[i-1] = ''; onChange(arr.join('').replace(/\s/g, '')); refs.current[i-1]?.focus() }
-          }}
-          onClick={() => refs.current[i]?.select()}
-          className="w-14 h-14 text-center text-2xl font-bold rounded-xl border-2 outline-none transition-colors"
-          style={{
-            background:  'var(--bg-overlay)',
-            borderColor: value[i] ? 'var(--brand)' : 'var(--border)',
-            color:       'var(--text-primary)',
-          }}
-        />
-      ))}
-    </div>
-  )
-}
-
-function VaultPinSetupModal({ onClose, onSaved }) {
-  const [step, setStep]     = useState('new')   // 'new' | 'confirm'
-  const [pin, setPin]       = useState('')
-  const [pinConfirm, setPinConfirm] = useState('')
-  const [error, setError]   = useState('')
-
-  const proceed = () => {
-    setError('')
-    if (step === 'new') {
-      if (pin.replace(/\s/g, '').length < 4) { setError('Enter a 4-digit PIN'); return }
-      setStep('confirm')
-    } else {
-      if (pinConfirm !== pin) { setError('PINs do not match'); setPinConfirm(''); return }
-      localStorage.setItem('ft-vault-pin', btoa(pin))
-      onSaved()
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.6)' }}>
-      <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden"
-        style={{ background: 'var(--bg-raised)', border: '1px solid var(--border)' }}>
-
-        <div className="flex items-center justify-between px-5 py-4 border-b"
-          style={{ borderColor: 'var(--border)' }}>
-          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Set vault PIN
-          </h2>
-          <button onClick={onClose} style={{ color: 'var(--text-muted)' }}><X size={16} /></button>
-        </div>
-
-        <div className="px-5 py-7 space-y-5">
-          <p className="text-sm text-center" style={{ color: 'var(--text-secondary)' }}>
-            {step === 'new' ? 'Choose a 4-digit PIN for your vault' : 'Confirm your new PIN'}
-          </p>
-          <PinBox
-            key={step}
-            value={step === 'new' ? pin : pinConfirm}
-            onChange={step === 'new' ? setPin : setPinConfirm}
-          />
-          {error && (
-            <p className="text-xs text-center font-medium" style={{ color: 'var(--red)' }}>{error}</p>
-          )}
-        </div>
-
-        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t"
-          style={{ borderColor: 'var(--border)' }}>
-          <button onClick={onClose} className="btn btn-ghost text-sm">Cancel</button>
-          <button onClick={proceed} className="btn btn-primary text-sm">
-            {step === 'new' ? 'Continue →' : 'Save PIN'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
+function getVaultPassHash() {
+  return localStorage.getItem('ft-vault-pass')
 }
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
@@ -381,11 +139,325 @@ function CopyBtn({ text, label }) {
   )
 }
 
+// ── Password input with show/hide ─────────────────────────────────────────────
+function PwInput({ value, onChange, placeholder = 'Password', autoFocus, onEnter, className = '' }) {
+  const [show, setShow] = useState(false)
+  return (
+    <div className="relative">
+      <input
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && onEnter?.()}
+        placeholder={placeholder}
+        className={`input-base w-full pr-10 ${className}`}
+        autoFocus={autoFocus}
+      />
+      <button type="button" onClick={() => setShow(s => !s)}
+        className="absolute right-3 top-1/2 -translate-y-1/2"
+        style={{ color: 'var(--text-muted)' }}>
+        {show ? <EyeOff size={15} /> : <Eye size={15} />}
+      </button>
+    </div>
+  )
+}
+
+// ── Set/reset vault password screen ──────────────────────────────────────────
+function SetNewPasswordScreen({ onSaved, onCancel, title = 'Set vault password' }) {
+  const [pw,      setPw]      = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [error,   setError]   = useState('')
+
+  const save = () => {
+    const err = validateVaultPassword(pw)
+    if (err) { setError(err); return }
+    if (pw !== confirm) { setError('Passwords do not match'); return }
+    localStorage.setItem('ft-vault-pass', btoa(pw))
+    onSaved()
+  }
+
+  return (
+    <div className="w-full max-w-xs mx-auto space-y-3">
+      <p className="text-sm font-semibold text-center mb-1" style={{ color: 'var(--text-primary)' }}>{title}</p>
+      <p className="text-xs text-center mb-3" style={{ color: 'var(--text-muted)' }}>
+        8+ characters · uppercase · number · special char
+      </p>
+      <PwInput value={pw} onChange={v => { setPw(v); setError('') }} placeholder="New password" autoFocus />
+      <StrengthBar password={pw} />
+      <PwInput value={confirm} onChange={v => { setConfirm(v); setError('') }} placeholder="Confirm password" onEnter={save} />
+      {error && <p className="text-xs text-center" style={{ color: 'var(--red)' }}>{error}</p>}
+      <button onClick={save} className="btn btn-primary w-full">Save password</button>
+      {onCancel && <button onClick={onCancel} className="btn btn-ghost w-full">Cancel</button>}
+    </div>
+  )
+}
+
+// ── Security recovery screen ──────────────────────────────────────────────────
+function SecurityRecoveryScreen({ onResetDone, onBack }) {
+  const secData = getSecurityData()
+  const [a1, setA1]           = useState('')
+  const [a2, setA2]           = useState('')
+  const [error, setError]     = useState('')
+  const [verified, setVerified] = useState(false)
+
+  // No security questions set up (migrated from old PIN system)
+  if (!secData) {
+    return (
+      <div className="flex flex-col items-center justify-center p-6 w-full max-w-xs mx-auto text-center">
+        <Shield size={36} className="mb-4" style={{ color: 'var(--brand)' }} />
+        <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>No security questions set</p>
+        <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
+          This vault was created without security questions. Remove the vault password to regain access — your saved passwords will not be deleted.
+        </p>
+        <button onClick={() => {
+          localStorage.removeItem('ft-vault-pass')
+          localStorage.removeItem('ft-vault-pin')
+          localStorage.removeItem('ft-vault-security')
+          onResetDone()
+        }} className="btn btn-primary w-full mb-2">Remove vault password</button>
+        <button onClick={onBack} className="btn btn-ghost w-full">← Back</button>
+      </div>
+    )
+  }
+
+  if (verified) {
+    return (
+      <SetNewPasswordScreen
+        title="Set a new vault password"
+        onSaved={onResetDone}
+        onCancel={() => setVerified(false)}
+      />
+    )
+  }
+
+  const verify = () => {
+    const ok1 = btoa(a1.toLowerCase().trim()) === secData.a1
+    const ok2 = btoa(a2.toLowerCase().trim()) === secData.a2
+    if (ok1 && ok2) { setVerified(true) }
+    else { setError('One or more answers are incorrect. Answers are case-insensitive.') }
+  }
+
+  return (
+    <div className="w-full max-w-xs mx-auto space-y-4">
+      <div className="text-center mb-2">
+        <Shield size={32} className="mx-auto mb-2" style={{ color: 'var(--brand)' }} />
+        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Security questions</p>
+        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Answer both questions to reset your password</p>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>{secData.q1}</label>
+        <input value={a1} onChange={e => { setA1(e.target.value); setError('') }}
+          className="input-base w-full" placeholder="Your answer" autoFocus />
+      </div>
+      <div>
+        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>{secData.q2}</label>
+        <input value={a2} onChange={e => { setA2(e.target.value); setError('') }}
+          onKeyDown={e => e.key === 'Enter' && verify()}
+          className="input-base w-full" placeholder="Your answer" />
+      </div>
+      {error && <p className="text-xs text-center" style={{ color: 'var(--red)' }}>{error}</p>}
+      <button onClick={verify} className="btn btn-primary w-full">Verify answers</button>
+      <button onClick={onBack} className="btn btn-ghost w-full">← Back to login</button>
+    </div>
+  )
+}
+
+// ── Vault login screen ────────────────────────────────────────────────────────
+function VaultPasswordScreen({ onUnlock, onForgot }) {
+  const [pw,      setPw]      = useState('')
+  const [shake,   setShake]   = useState(false)
+  const [error,   setError]   = useState('')
+  const [attempts, setAttempts] = useState(0)
+  const [phase,   setPhase]   = useState('login') // 'login' | 'recovery'
+
+  const MAX_ATTEMPTS = 3
+
+  const triggerShake = () => {
+    setShake(true)
+    setTimeout(() => { setShake(false); setPw('') }, 550)
+  }
+
+  const verify = () => {
+    if (!pw) return
+    if (btoa(pw) === getVaultPassHash()) {
+      onUnlock()
+    } else {
+      triggerShake()
+      const next = attempts + 1
+      setAttempts(next)
+      if (next >= MAX_ATTEMPTS) {
+        setPhase('recovery')
+      } else {
+        setError(`Incorrect password · ${MAX_ATTEMPTS - next} attempt${MAX_ATTEMPTS - next !== 1 ? 's' : ''} remaining`)
+      }
+    }
+  }
+
+  if (phase === 'recovery') {
+    return (
+      <div className="flex flex-col items-center justify-center p-6" style={{ minHeight: 'calc(100vh - 60px)', background: 'var(--bg-base)' }}>
+        <SecurityRecoveryScreen
+          onResetDone={() => { setPhase('login'); setAttempts(0); setError(''); setPw('') }}
+          onBack={() => { setPhase('login'); setAttempts(0); setError(''); setPw('') }}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center p-6"
+      style={{ minHeight: 'calc(100vh - 60px)', background: 'var(--bg-base)' }}>
+
+      <style>{`
+        @keyframes vault-shake {
+          0%,100%{transform:translateX(0)}
+          15%{transform:translateX(-10px)} 30%{transform:translateX(10px)}
+          45%{transform:translateX(-7px)}  60%{transform:translateX(7px)}
+          75%{transform:translateX(-4px)}  90%{transform:translateX(4px)}
+        }
+        .vault-shake{animation:vault-shake .5s ease-in-out}
+      `}</style>
+
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5"
+        style={{ background: 'color-mix(in srgb, var(--brand) 12%, transparent)' }}>
+        <Lock size={28} style={{ color: 'var(--brand)' }} />
+      </div>
+      <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Vault</h2>
+      <p className="text-sm mb-8" style={{ color: 'var(--text-muted)' }}>Enter your password to access</p>
+
+      <div className={`w-full max-w-xs space-y-3 ${shake ? 'vault-shake' : ''}`}>
+        <PwInput value={pw} onChange={v => { setPw(v); setError('') }} placeholder="Vault password" autoFocus onEnter={verify} />
+        {error && <p className="text-xs text-center" style={{ color: 'var(--red)' }}>{error}</p>}
+        <button onClick={verify} className="btn btn-primary w-full">Unlock vault</button>
+      </div>
+
+      <button onClick={() => setPhase('recovery')} className="mt-8 text-sm"
+        style={{ color: 'var(--text-muted)' }}>
+        Forgot password?
+      </button>
+    </div>
+  )
+}
+
+// ── Vault setup modal (create password + security questions) ──────────────────
+function VaultSetupModal({ onClose, onSaved }) {
+  const [step,    setStep]    = useState('password') // 'password' | 'questions'
+  const [pw,      setPw]      = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [q1,      setQ1]      = useState(SECURITY_QUESTIONS[0])
+  const [q2,      setQ2]      = useState(SECURITY_QUESTIONS[2])
+  const [a1,      setA1]      = useState('')
+  const [a2,      setA2]      = useState('')
+  const [error,   setError]   = useState('')
+
+  const nextStep = () => {
+    setError('')
+    const err = validateVaultPassword(pw)
+    if (err) { setError(err); return }
+    if (pw !== confirm) { setError('Passwords do not match'); return }
+    setStep('questions')
+  }
+
+  const save = () => {
+    setError('')
+    if (!a1.trim()) { setError('Please answer question 1'); return }
+    if (!a2.trim()) { setError('Please answer question 2'); return }
+    if (q1 === q2)  { setError('Please choose two different questions'); return }
+    // Save password
+    localStorage.setItem('ft-vault-pass', btoa(pw))
+    // Save security Q&A (answers stored lowercased + encoded)
+    localStorage.setItem('ft-vault-security', btoa(JSON.stringify({
+      q1, a1: btoa(a1.toLowerCase().trim()),
+      q2, a2: btoa(a2.toLowerCase().trim()),
+    })))
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.6)' }}>
+      <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden"
+        style={{ background: 'var(--bg-raised)', border: '1px solid var(--border)' }}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div>
+            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {step === 'password' ? 'Create vault password' : 'Security questions'}
+            </h2>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              Step {step === 'password' ? '1' : '2'} of 2
+            </p>
+          </div>
+          <button onClick={onClose} style={{ color: 'var(--text-muted)' }}><X size={16} /></button>
+        </div>
+
+        <div className="px-5 py-5 space-y-4">
+          {step === 'password' ? (
+            <>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Must be 8+ characters with uppercase, number, and special character.
+              </p>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Password</label>
+                <PwInput value={pw} onChange={v => { setPw(v); setError('') }} placeholder="Create a strong password" autoFocus />
+                <StrengthBar password={pw} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Confirm password</label>
+                <PwInput value={confirm} onChange={v => { setConfirm(v); setError('') }} placeholder="Re-enter password" onEnter={nextStep} />
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                These questions will be used to recover your vault if you forget your password.
+              </p>
+              {[
+                { q: q1, setQ: setQ1, a: a1, setA: setA1, label: 'Question 1', exclude: q2 },
+                { q: q2, setQ: setQ2, a: a2, setA: setA2, label: 'Question 2', exclude: q1 },
+              ].map(({ q, setQ, a, setA, label, exclude }) => (
+                <div key={label} className="space-y-1.5">
+                  <label className="block text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{label}</label>
+                  <div className="relative">
+                    <select value={q} onChange={e => setQ(e.target.value)}
+                      className="input-base w-full appearance-none pr-8">
+                      {SECURITY_QUESTIONS.filter(sq => sq !== exclude).map(sq => (
+                        <option key={sq} value={sq}>{sq}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+                  </div>
+                  <input value={a} onChange={e => { setA(e.target.value); setError('') }}
+                    placeholder="Your answer" className="input-base w-full" />
+                </div>
+              ))}
+            </>
+          )}
+
+          {error && <p className="text-xs text-center font-medium" style={{ color: 'var(--red)' }}>{error}</p>}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t" style={{ borderColor: 'var(--border)' }}>
+          {step === 'questions' && (
+            <button onClick={() => { setStep('password'); setError('') }} className="btn btn-ghost text-sm">← Back</button>
+          )}
+          <button onClick={onClose} className="btn btn-ghost text-sm">Cancel</button>
+          <button onClick={step === 'password' ? nextStep : save} className="btn btn-primary text-sm">
+            {step === 'password' ? 'Next →' : 'Save vault'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Password add/edit modal ───────────────────────────────────────────────────
 
 function PasswordModal({ initial, onSave, onClose }) {
   const isEdit = Boolean(initial)
-  const [form, setForm]   = useState(initial || EMPTY_FORM)
+  const [form, setForm]     = useState(initial || EMPTY_FORM)
   const [showPw, setShowPw] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -407,8 +479,7 @@ function PasswordModal({ initial, onSave, onClose }) {
         style={{ background: 'var(--bg-raised)', maxHeight: '90vh' }}
         onClick={e => e.stopPropagation()}>
 
-        <div className="flex items-center justify-between px-5 py-4 border-b"
-          style={{ borderColor: 'var(--border)' }}>
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
           <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
             {isEdit ? 'Edit password' : 'Add password'}
           </h3>
@@ -417,14 +488,14 @@ function PasswordModal({ initial, onSave, onClose }) {
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {[
-            { key: 'site_name', label: 'Site name *',       placeholder: 'Google, GitHub, Netflix…', type: 'text' },
-            { key: 'site_url',  label: 'URL',               placeholder: 'https://example.com',       type: 'text' },
-            { key: 'username',  label: 'Username / Email',  placeholder: 'user@example.com',          type: 'text' },
+            { key: 'site_name', label: 'Site name *',      placeholder: 'Google, GitHub, Netflix…', type: 'text' },
+            { key: 'site_url',  label: 'URL',              placeholder: 'https://example.com',       type: 'text' },
+            { key: 'username',  label: 'Username / Email', placeholder: 'user@example.com',          type: 'text' },
           ].map(({ key, label, placeholder, type }) => (
             <div key={key}>
               <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>{label}</label>
               <input value={form[key]} onChange={e => set(key, e.target.value)}
-                placeholder={placeholder} type={type} className="input-field w-full" />
+                placeholder={placeholder} type={type} className="input-base w-full" />
             </div>
           ))}
 
@@ -434,7 +505,7 @@ function PasswordModal({ initial, onSave, onClose }) {
               <div className="relative flex-1">
                 <input type={showPw ? 'text' : 'password'} value={form.password}
                   onChange={e => set('password', e.target.value)}
-                  placeholder="Enter or generate…" className="input-field w-full pr-9" />
+                  placeholder="Enter or generate…" className="input-base w-full pr-9" />
                 <button onClick={() => setShowPw(p => !p)}
                   className="absolute right-2 top-1/2 -translate-y-1/2"
                   style={{ color: 'var(--text-muted)' }}>
@@ -451,7 +522,7 @@ function PasswordModal({ initial, onSave, onClose }) {
 
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Category</label>
-            <select value={form.category} onChange={e => set('category', e.target.value)} className="input-field w-full">
+            <select value={form.category} onChange={e => set('category', e.target.value)} className="input-base w-full">
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
@@ -459,12 +530,11 @@ function PasswordModal({ initial, onSave, onClose }) {
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Notes</label>
             <textarea value={form.notes} onChange={e => set('notes', e.target.value)}
-              placeholder="Security question, 2FA backup…" rows={3} className="input-field w-full resize-none" />
+              placeholder="Security question, 2FA backup…" rows={3} className="input-base w-full resize-none" />
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t"
-          style={{ borderColor: 'var(--border)' }}>
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t" style={{ borderColor: 'var(--border)' }}>
           <button onClick={onClose} className="btn btn-ghost text-sm">Cancel</button>
           <button onClick={handleSubmit} disabled={saving || !form.site_name || !form.password}
             className="btn btn-primary text-sm">
@@ -557,16 +627,12 @@ function Vault({ userId, hasPin, onLock, onSetPin }) {
   const handleSave = async (form) => {
     if (!supabase || !userId) return
     if (modal?.mode === 'edit') {
-      const { error } = await supabase.from('passwords').update({
-        ...form, updated_at: new Date().toISOString(),
-      }).eq('id', modal.item.id)
-      if (error) { console.error('updatePassword:', error); return }
+      await supabase.from('passwords').update({ ...form, updated_at: new Date().toISOString() }).eq('id', modal.item.id)
     } else {
-      const { error } = await supabase.from('passwords').insert({
+      await supabase.from('passwords').insert({
         id: crypto.randomUUID(), user_id: userId, ...form,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       })
-      if (error) { console.error('insertPassword:', error); return }
     }
     await fetchPasswords()
   }
@@ -594,17 +660,14 @@ function Vault({ userId, hasPin, onLock, onSetPin }) {
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }))
     const { error } = await supabase.from('passwords').insert(records)
-    if (error) { console.error('importCSV:', error); alert('Import failed: ' + error.message); return }
+    if (error) { alert('Import failed: ' + error.message); return }
     await fetchPasswords()
     e.target.value = ''
     alert(`Imported ${records.length} password${records.length !== 1 ? 's' : ''}`)
   }
 
-  const chips = ['All', ...CATEGORIES]
-
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <Shield size={18} style={{ color: 'var(--brand)' }} />
@@ -616,35 +679,26 @@ function Vault({ userId, hasPin, onLock, onSetPin }) {
         </div>
         <div className="flex items-center gap-2">
           <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={handleImportCSV} />
-          <button onClick={() => csvInputRef.current?.click()}
-            className="btn btn-ghost text-xs flex items-center gap-1.5">
+          <button onClick={() => csvInputRef.current?.click()} className="btn btn-ghost text-xs flex items-center gap-1.5">
             <Upload size={13} /> Import CSV
           </button>
-
-          {/* Lock button (when PIN set) or Set vault PIN (when not set) */}
           {hasPin ? (
-            <button onClick={onLock}
-              className="btn btn-ghost text-xs flex items-center gap-1.5"
-              style={{ color: 'var(--text-muted)' }}>
+            <button onClick={onLock} className="btn btn-ghost text-xs flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
               <Lock size={13} /> Lock
             </button>
           ) : (
-            <button onClick={onSetPin}
-              className="btn btn-ghost text-xs flex items-center gap-1.5">
-              <Lock size={13} /> Set vault PIN
+            <button onClick={onSetPin} className="btn btn-ghost text-xs flex items-center gap-1.5">
+              <Lock size={13} /> Set vault password
             </button>
           )}
-
-          <button onClick={() => setModal({ mode: 'add' })}
-            className="btn btn-primary text-sm flex items-center gap-1.5">
+          <button onClick={() => setModal({ mode: 'add' })} className="btn btn-primary text-sm flex items-center gap-1.5">
             <Plus size={14} /> Add
           </button>
         </div>
       </div>
 
-      {/* Category chips */}
       <div className="flex items-center gap-2 flex-wrap">
-        {chips.map(c => (
+        {['All', ...CATEGORIES].map(c => (
           <button key={c} onClick={() => setActiveCategory(c)}
             className="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
             style={{
@@ -657,7 +711,6 @@ function Vault({ userId, hasPin, onLock, onSetPin }) {
         ))}
       </div>
 
-      {/* Search */}
       <div className="flex items-center gap-2 px-3 py-2 rounded-xl border"
         style={{ background: 'var(--bg-overlay)', borderColor: 'var(--border)' }}>
         <Search size={15} style={{ color: 'var(--text-muted)' }} />
@@ -668,7 +721,6 @@ function Vault({ userId, hasPin, onLock, onSetPin }) {
         {search && <button onClick={() => setSearch('')} style={{ color: 'var(--text-muted)' }}><X size={14} /></button>}
       </div>
 
-      {/* Password list */}
       {passwords.length === 0 ? (
         <div className="py-20 text-center space-y-3">
           <KeyRound size={32} className="mx-auto" style={{ color: 'var(--text-muted)' }} />
@@ -706,8 +758,8 @@ function Vault({ userId, hasPin, onLock, onSetPin }) {
         <PasswordModal
           initial={modal.mode === 'edit' ? {
             site_name: modal.item.site_name, site_url: modal.item.site_url,
-            username:  modal.item.username,  password: modal.item.password,
-            notes:     modal.item.notes,     category: modal.item.category,
+            username: modal.item.username,   password: modal.item.password,
+            notes: modal.item.notes,         category: modal.item.category,
           } : null}
           onSave={handleSave}
           onClose={() => setModal(null)}
@@ -723,48 +775,32 @@ export default function PasswordManager() {
   const { user } = useAppStore()
   const userId = user?.id
 
-  // Whether a vault PIN is configured
-  const [hasPin, setHasPin] = useState(() => !!localStorage.getItem('ft-vault-pin'))
-  // If no PIN → start unlocked; if PIN exists → start locked
-  const [unlocked, setUnlocked] = useState(() => !localStorage.getItem('ft-vault-pin'))
-  // Show the "Set vault PIN" setup modal (from inside the vault when no PIN)
+  // Support both old (ft-vault-pin) and new (ft-vault-pass) storage keys
+  const [hasPin, setHasPin] = useState(() =>
+    !!localStorage.getItem('ft-vault-pass') || !!localStorage.getItem('ft-vault-pin')
+  )
+  const [unlocked, setUnlocked] = useState(() =>
+    !localStorage.getItem('ft-vault-pass') && !localStorage.getItem('ft-vault-pin')
+  )
   const [showSetup, setShowSetup] = useState(false)
 
   const handleUnlock = () => setUnlocked(true)
-
-  const handleForgot = () => {
-    if (!window.confirm('Remove vault PIN? Your passwords will not be deleted.')) return
-    localStorage.removeItem('ft-vault-pin')
-    setHasPin(false)
-    setUnlocked(true)
-  }
-
-  const handleLock = () => setUnlocked(false)
+  const handleLock   = () => setUnlocked(false)
 
   const handlePinSaved = () => {
     setHasPin(true)
     setShowSetup(false)
-    // Vault stays open after setting PIN — user can lock manually
   }
 
-  // Show numpad entry if PIN is configured and vault is locked
   if (hasPin && !unlocked) {
-    return <VaultPinScreen onUnlock={handleUnlock} onForgot={handleForgot} />
+    return <VaultPasswordScreen onUnlock={handleUnlock} />
   }
 
   return (
     <>
-      <Vault
-        userId={userId}
-        hasPin={hasPin}
-        onLock={handleLock}
-        onSetPin={() => setShowSetup(true)}
-      />
+      <Vault userId={userId} hasPin={hasPin} onLock={handleLock} onSetPin={() => setShowSetup(true)} />
       {showSetup && (
-        <VaultPinSetupModal
-          onClose={() => setShowSetup(false)}
-          onSaved={handlePinSaved}
-        />
+        <VaultSetupModal onClose={() => setShowSetup(false)} onSaved={handlePinSaved} />
       )}
     </>
   )

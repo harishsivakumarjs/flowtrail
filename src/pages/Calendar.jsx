@@ -7,7 +7,8 @@ import { ChevronLeft, ChevronRight, Calendar as CalIcon, Plus,
 import { useAppStore } from '@/store/appStore'
 import { supabase } from '@/lib/supabase'
 import {
-  isCalendarConnected, connectGoogleCalendar, disconnectCalendar,
+  isCalendarConnected, wasCalendarConnected, connectGoogleCalendar,
+  silentlyReconnect, disconnectCalendar,
   fetchCalendarEvents, scheduleEventNotifications, createCalendarEvent,
   deleteCalendarEvent, updateCalendarEvent, getStoredToken
 } from '@/lib/googleCalendar'
@@ -19,7 +20,7 @@ import { addTask, toggleTask, deleteTask, updateTask, scheduleTaskNotification }
 import { TODAY } from '@/lib/utils'
 
 // ── Google Connect Banner ─────────────────────────────────────
-function GoogleCalendarBanner({ connected, onConnect, onDisconnect, loading }) {
+function GoogleCalendarBanner({ connected, reconnecting, wasConnected, onConnect, onDisconnect, loading }) {
   if (connected) return (
     <div className="flex items-center justify-between px-4 py-2.5 rounded-xl"
       style={{ background: 'color-mix(in srgb, var(--green) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--green) 20%, transparent)' }}>
@@ -33,16 +34,26 @@ function GoogleCalendarBanner({ connected, onConnect, onDisconnect, loading }) {
       </button>
     </div>
   )
+
+  if (reconnecting) return (
+    <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl"
+      style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border)' }}>
+      <RefreshCw size={14} className="animate-spin" style={{ color: 'var(--text-muted)' }} />
+      <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Reconnecting to Google Calendar…</span>
+    </div>
+  )
+
   return (
     <div className="flex items-center justify-between px-4 py-2.5 rounded-xl"
       style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border)' }}>
       <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-        <CalIcon size={15} /><span>Connect Google Calendar to see your events</span>
+        <CalIcon size={15} />
+        <span>{wasConnected ? 'Session expired — reconnect Google Calendar' : 'Connect Google Calendar to see your events'}</span>
       </div>
       <button onClick={onConnect} disabled={loading}
         className="btn btn-primary text-xs px-3 py-1.5 gap-1">
         {loading ? <RefreshCw size={12} className="animate-spin" /> : <ExternalLink size={12} />}
-        {loading ? 'Connecting…' : 'Connect'}
+        {loading ? 'Connecting…' : wasConnected ? 'Reconnect' : 'Connect'}
       </button>
     </div>
   )
@@ -470,9 +481,10 @@ export default function Calendar() {
   const userId                            = user?.id
   const [currentMonth, setCurrentMonth]   = useState(new Date())
   const [googleEvents, setGoogleEvents]   = useState([])
-  const [connected, setConnected]         = useState(false)
-  const [loading, setLoading]             = useState(false)
-  const [syncing, setSyncing]             = useState(false)
+  const [connected,     setConnected]     = useState(false)
+  const [reconnecting,  setReconnecting]  = useState(false)
+  const [loading,       setLoading]       = useState(false)
+  const [syncing,       setSyncing]       = useState(false)
   const [selectedDay, setSelectedDay]     = useState(null)
   const [showAdd, setShowAdd]             = useState(false)
   const [showImport, setShowImport]       = useState(false)
@@ -481,11 +493,19 @@ export default function Calendar() {
   const [editingItem, setEditingItem]     = useState(null)
   const [pendingComplete, setPendingComplete] = useState(null)
 
-  // Auto-reconnect on mount if token exists
+  // Auto-reconnect on mount
   useEffect(() => {
-    const hasToken = isCalendarConnected()
-    setConnected(hasToken)
-    if (hasToken) fetchEvents()
+    if (isCalendarConnected()) {
+      setConnected(true)
+      // fetchEvents triggered by the connected-dependent effect below
+    } else if (wasCalendarConnected()) {
+      // Token expired but user was connected before — silently refresh
+      setReconnecting(true)
+      silentlyReconnect()
+        .then(() => { setConnected(true) })
+        .catch(() => { /* silent fail — banner will show reconnect button */ })
+        .finally(() => setReconnecting(false))
+    }
   }, [])
 
   const fetchEvents = useCallback(async () => {
@@ -618,7 +638,11 @@ export default function Calendar() {
       </div>
 
       <div className="mb-3">
-        <GoogleCalendarBanner connected={connected} onConnect={handleConnect}
+        <GoogleCalendarBanner
+          connected={connected}
+          reconnecting={reconnecting}
+          wasConnected={wasCalendarConnected()}
+          onConnect={handleConnect}
           onDisconnect={() => { disconnectCalendar(); setConnected(false); setGoogleEvents([]) }}
           loading={loading} />
       </div>

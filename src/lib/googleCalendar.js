@@ -24,11 +24,55 @@ export function getStoredToken() {
   return isCalendarConnected() ? accessToken : null
 }
 
+export function wasCalendarConnected() {
+  return localStorage.getItem('gcal_was_connected') === '1'
+}
+
 export function disconnectCalendar() {
   accessToken = null
   tokenExpiry = 0
   localStorage.removeItem('gcal_token')
   localStorage.removeItem('gcal_expiry')
+  localStorage.removeItem('gcal_was_connected')
+}
+
+/** Try to get a fresh token silently (no popup). Resolves with token or rejects if interaction needed. */
+export function silentlyReconnect() {
+  return new Promise((resolve, reject) => {
+    if (!CLIENT_ID) { reject(new Error('No CLIENT_ID')); return }
+
+    const run = () => {
+      try {
+        const client = window.google.accounts.oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope:     SCOPES,
+          callback:  (response) => {
+            if (response.error) { reject(new Error(response.error)); return }
+            accessToken = response.access_token
+            tokenExpiry  = Date.now() + (response.expires_in * 1000)
+            localStorage.setItem('gcal_token',         accessToken)
+            localStorage.setItem('gcal_expiry',        tokenExpiry.toString())
+            localStorage.setItem('gcal_was_connected', '1')
+            resolve(accessToken)
+          },
+        })
+        // prompt:'none' = no consent/account UI; fails with interaction_required if needed
+        client.requestAccessToken({ prompt: 'none' })
+      } catch (e) { reject(e) }
+    }
+
+    if (window.google?.accounts?.oauth2) { run(); return }
+
+    let script = document.getElementById('gis-script')
+    if (!script) {
+      script = document.createElement('script')
+      script.id  = 'gis-script'
+      script.src = 'https://accounts.google.com/gsi/client'
+      document.head.appendChild(script)
+    }
+    script.addEventListener('load', run, { once: true })
+    script.addEventListener('error', () => reject(new Error('Failed to load GIS')), { once: true })
+  })
 }
 
 /** Opens Google OAuth popup to get calendar access token */
@@ -49,8 +93,9 @@ export function connectGoogleCalendar() {
           if (response.error) { reject(new Error(response.error)); return }
           accessToken = response.access_token
           tokenExpiry  = Date.now() + (response.expires_in * 1000)
-          localStorage.setItem('gcal_token',  accessToken)
-          localStorage.setItem('gcal_expiry', tokenExpiry.toString())
+          localStorage.setItem('gcal_token',         accessToken)
+          localStorage.setItem('gcal_expiry',        tokenExpiry.toString())
+          localStorage.setItem('gcal_was_connected', '1')
           resolve(accessToken)
         },
       })

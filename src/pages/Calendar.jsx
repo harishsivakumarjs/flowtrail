@@ -14,6 +14,7 @@ import {
 import { requestNotificationPermission } from '@/lib/notifications'
 import Modal from '@/components/ui/Modal'
 import TimeInput from '@/components/ui/TimeInput'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 import { addTask, toggleTask, deleteTask, updateTask, scheduleTaskNotification } from '@/hooks/useTasks'
 import { TODAY } from '@/lib/utils'
 
@@ -478,6 +479,7 @@ export default function Calendar() {
   const [addDate, setAddDate]             = useState(TODAY())
   const [selectedItem, setSelectedItem]   = useState(null)
   const [editingItem, setEditingItem]     = useState(null)
+  const [pendingComplete, setPendingComplete] = useState(null)
 
   // Auto-reconnect on mount if token exists
   useEffect(() => {
@@ -521,9 +523,14 @@ export default function Calendar() {
     setSelectedItem(null)
   }
 
-  const handleComplete = async (item) => {
-    await toggleTask(item.id)
-    setSelectedItem(null)
+  const handleComplete = (item) => {
+    const dueDate = item.due_date || item.start?.split('T')[0]
+    const isFuture = dueDate && dueDate > TODAY()
+    if (isFuture) {
+      setPendingComplete(item)
+    } else {
+      toggleTask(item.id).then(() => setSelectedItem(null))
+    }
   }
 
   const handleEdit = (item) => {
@@ -748,6 +755,18 @@ export default function Calendar() {
 
       <ImportModal open={showImport} onClose={() => setShowImport(false)}
         events={googleEvents} userId={userId} />
+
+      <ConfirmModal
+        open={!!pendingComplete}
+        message={`"${pendingComplete?.title}" is scheduled for a future date. Mark it as complete now?`}
+        confirmLabel="Mark complete"
+        onConfirm={async () => {
+          await toggleTask(pendingComplete.id)
+          setPendingComplete(null)
+          setSelectedItem(null)
+        }}
+        onCancel={() => setPendingComplete(null)}
+      />
     </div>
   )
 }

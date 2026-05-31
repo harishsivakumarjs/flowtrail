@@ -2,94 +2,118 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { format } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { useAppStore } from '@/store/appStore'
-import { Search, Plus, Pin, Trash2, X, Check, Edit2 } from 'lucide-react'
-
-const COLORS = [
-  { name: 'White',  value: '#ffffff' },
-  { name: 'Yellow', value: '#fef9c3' },
-  { name: 'Blue',   value: '#dbeafe' },
-  { name: 'Green',  value: '#dcfce7' },
-  { name: 'Pink',   value: '#fce7f3' },
-  { name: 'Purple', value: '#f3e8ff' },
-  { name: 'Orange', value: '#ffedd5' },
-  { name: 'Grey',   value: '#f1f5f9' },
-]
+import { Search, Plus, Pin, Trash2, X, Check, Edit2, FolderInput } from 'lucide-react'
 
 const DEFAULT_FOLDERS = ['Work', 'Personal', 'Ideas']
 
-function isColorDark(hex) {
-  if (!hex) return false
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return (r * 299 + g * 587 + b * 114) / 1000 < 128
+// ── Helpers ────────────────────────────────────────────────────
+async function loadFolders() {
+  if (!supabase) return null
+  const { data: { user } } = await supabase.auth.getUser()
+  const saved = user?.user_metadata?.notes_folders
+  return Array.isArray(saved) && saved.length ? saved : null
 }
 
-function NoteCard({ note, onClick }) {
+async function saveFoldersRemote(folders) {
+  if (!supabase) return
+  await supabase.auth.updateUser({ data: { notes_folders: folders } })
+}
+
+// ── Note card ──────────────────────────────────────────────────
+function NoteCard({ note, allFolders, onClick, onMoveFolder }) {
+  const [showMove, setShowMove] = useState(false)
   const preview = note.content.slice(0, 200)
-  const dark = isColorDark(note.color)
-  const textColor = dark ? '#fff' : '#111'
-  const mutedColor = dark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.4)'
 
   return (
     <div
-      onClick={onClick}
-      className="rounded-xl p-4 cursor-pointer transition-all hover:shadow-md break-inside-avoid mb-3"
-      style={{ background: note.color || '#ffffff', border: '1px solid rgba(0,0,0,0.07)' }}>
+      className="rounded-xl p-4 cursor-pointer transition-all hover:shadow-md break-inside-avoid mb-3 relative group"
+      style={{ background: 'var(--bg-raised)', border: '1px solid var(--border)' }}
+      onClick={onClick}>
+
       {note.pinned && (
-        <div className="mb-2"><Pin size={12} style={{ color: mutedColor }} /></div>
+        <div className="mb-1.5"><Pin size={12} style={{ color: 'var(--text-muted)' }} /></div>
       )}
+
+      {/* Folder badge + move button */}
       {note.folder && note.folder !== 'All' && (
-        <span className="inline-block text-xs mb-1.5 px-1.5 py-0.5 rounded-full"
-          style={{ background: 'rgba(0,0,0,0.06)', color: mutedColor }}>
-          {note.folder}
-        </span>
+        <div className="flex items-center gap-1 mb-1.5">
+          <span className="text-xs px-1.5 py-0.5 rounded-full"
+            style={{ background: 'var(--bg-overlay)', color: 'var(--text-muted)' }}>
+            {note.folder}
+          </span>
+          <button
+            onClick={e => { e.stopPropagation(); setShowMove(v => !v) }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-[var(--bg-overlay)]"
+            title="Move to folder"
+            style={{ color: 'var(--text-muted)' }}>
+            <FolderInput size={12} />
+          </button>
+        </div>
       )}
+      {(!note.folder || note.folder === 'All') && (
+        <button
+          onClick={e => { e.stopPropagation(); setShowMove(v => !v) }}
+          className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[var(--bg-overlay)]"
+          title="Move to folder"
+          style={{ color: 'var(--text-muted)' }}>
+          <FolderInput size={12} />
+        </button>
+      )}
+
+      {/* Folder move dropdown */}
+      {showMove && (
+        <div
+          className="absolute left-3 top-10 z-20 rounded-xl shadow-xl py-1 min-w-[130px]"
+          style={{ background: 'var(--bg-raised)', border: '1px solid var(--border)' }}
+          onClick={e => e.stopPropagation()}>
+          {['All', ...allFolders.filter(f => f !== 'All')].map(f => (
+            <button key={f}
+              onClick={() => { onMoveFolder(note.id, f); setShowMove(false) }}
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--bg-overlay)] transition-colors"
+              style={{ color: note.folder === f ? 'var(--brand)' : 'var(--text-primary)', fontWeight: note.folder === f ? 600 : 400 }}>
+              {f === 'All' ? 'No folder' : f}
+            </button>
+          ))}
+        </div>
+      )}
+
       {note.title && (
-        <div className="text-sm font-semibold mb-1 leading-snug" style={{ color: textColor }}>
+        <div className="text-sm font-semibold mb-1 leading-snug" style={{ color: 'var(--text-primary)' }}>
           {note.title}
         </div>
       )}
       {preview ? (
-        <div className="text-xs leading-relaxed whitespace-pre-wrap line-clamp-6"
-          style={{ color: dark ? 'rgba(255,255,255,0.82)' : '#444' }}>
+        <div className="text-xs leading-relaxed whitespace-pre-wrap line-clamp-6" style={{ color: 'var(--text-secondary)' }}>
           {preview}
         </div>
       ) : !note.title ? (
-        <div className="text-xs italic" style={{ color: mutedColor }}>Empty note</div>
+        <div className="text-xs italic" style={{ color: 'var(--text-muted)' }}>Empty note</div>
       ) : null}
     </div>
   )
 }
 
+// ── Note editor (full-screen) ──────────────────────────────────
 function NoteEditor({ note, allFolders, onClose, onSave, onDelete, onFolderMove }) {
-  const [title, setTitle]   = useState(note.title || '')
+  const [title,   setTitle]   = useState(note.title || '')
   const [content, setContent] = useState(note.content || '')
-  const [color, setColor]   = useState(note.color || '#ffffff')
-  const [pinned, setPinned] = useState(note.pinned || false)
-  const [folder, setFolder] = useState(note.folder || 'All')
+  const [pinned,  setPinned]  = useState(note.pinned || false)
+  const [folder,  setFolder]  = useState(note.folder || 'All')
   const saveTimer = useRef(null)
-  const dark = isColorDark(color)
-  const textColor = dark ? '#fff' : '#111'
 
-  const flush = (t, c, col, pin, fol) => {
+  const flush = (t, c, pin, fol) => {
     clearTimeout(saveTimer.current)
-    onSave(note.id, { title: t, content: c, color: col, pinned: pin, folder: fol })
+    onSave(note.id, { title: t, content: c, color: null, pinned: pin, folder: fol })
   }
 
-  const schedule = (t, c, col, pin, fol) => {
+  const schedule = (t, c, pin, fol) => {
     clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => {
-      onSave(note.id, { title: t, content: c, color: col, pinned: pin, folder: fol })
-    }, 500)
+    saveTimer.current = setTimeout(() => onSave(note.id, { title: t, content: c, color: null, pinned: pin, folder: fol }), 500)
   }
 
   useEffect(() => () => clearTimeout(saveTimer.current), [])
 
-  const handleClose = () => {
-    flush(title, content, color, pinned, folder)
-    onClose()
-  }
+  const handleClose = () => { flush(title, content, pinned, folder); onClose() }
 
   const handleDelete = () => {
     if (!confirm('Delete this note?')) return
@@ -97,113 +121,75 @@ function NoteEditor({ note, allFolders, onClose, onSave, onDelete, onFolderMove 
     onDelete(note.id)
   }
 
-  const handleColorChange = (col) => {
-    setColor(col)
-    flush(title, content, col, pinned, folder)
-  }
-
   const handlePin = () => {
     const next = !pinned
     setPinned(next)
-    flush(title, content, color, next, folder)
+    flush(title, content, next, folder)
   }
 
   const handleFolderChange = (fol) => {
     setFolder(fol)
-    flush(title, content, color, pinned, fol)
+    flush(title, content, pinned, fol)
     onFolderMove?.(fol)
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.5)' }}
       onClick={handleClose}>
-      <div
-        className="w-full max-w-lg rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-        style={{ background: color, maxHeight: '85vh' }}
+      <div className="w-full max-w-lg rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        style={{ background: 'var(--bg-raised)', border: '1px solid var(--border)', maxHeight: '85vh' }}
         onClick={e => e.stopPropagation()}>
 
         {/* Toolbar */}
-        <div className="flex items-center justify-between px-4 py-3 border-b"
-          style={{ borderColor: 'rgba(0,0,0,0.08)' }}>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {COLORS.map(c => (
-              <button key={c.value} onClick={() => handleColorChange(c.value)} title={c.name}
-                className="w-5 h-5 rounded-full transition-transform"
-                style={{
-                  background: c.value,
-                  border: `2px solid ${color === c.value ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.12)'}`,
-                  transform: color === c.value ? 'scale(1.2)' : 'scale(1)',
-                }} />
-            ))}
+        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center gap-2">
+            <select
+              value={folder}
+              onChange={e => handleFolderChange(e.target.value)}
+              className="text-xs px-2 py-1 rounded-lg outline-none cursor-pointer font-medium"
+              style={{ background: 'var(--bg-overlay)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
+              <option value="All">No folder</option>
+              {allFolders.filter(f => f !== 'All').map(f => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </select>
+            {note.created_at && (
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                {format(new Date(note.created_at), 'MMM d, yyyy')}
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+          <div className="flex items-center gap-1">
             <button onClick={handlePin} title={pinned ? 'Unpin' : 'Pin'}
               className="p-1.5 rounded-lg transition-colors"
-              style={{
-                color: dark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.5)',
-                background: pinned ? (dark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)') : 'transparent',
-              }}>
+              style={{ color: pinned ? 'var(--brand)' : 'var(--text-muted)', background: pinned ? 'var(--bg-overlay)' : 'transparent' }}>
               <Pin size={15} />
             </button>
-            <button onClick={handleDelete} title="Delete"
-              className="p-1.5 rounded-lg"
-              style={{ color: dark ? 'rgba(255,140,140,0.9)' : 'rgba(180,0,0,0.65)' }}>
+            <button onClick={handleDelete} className="p-1.5 rounded-lg" style={{ color: 'var(--red)' }}>
               <Trash2 size={15} />
             </button>
-            <button onClick={handleClose}
-              className="p-1.5 rounded-lg"
-              style={{ color: dark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)' }}>
+            <button onClick={handleClose} className="p-1.5 rounded-lg" style={{ color: 'var(--text-muted)' }}>
               <X size={15} />
             </button>
           </div>
-        </div>
-
-        {/* Folder selector + creation date */}
-        <div className="px-4 pt-3 pb-0 flex-shrink-0 flex items-center justify-between gap-3"
-          onClick={e => e.stopPropagation()}>
-          <select
-            value={folder}
-            onChange={e => handleFolderChange(e.target.value)}
-            className="text-xs px-2 py-1 rounded-lg outline-none cursor-pointer font-medium"
-            style={{
-              background: dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.07)',
-              color: textColor,
-              border: `1px solid ${dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'}`,
-            }}>
-            <option value="All">All notes</option>
-            {allFolders.filter(f => f !== 'All').map(f => (
-              <option key={f} value={f}>{f}</option>
-            ))}
-          </select>
-          {note.created_at && (
-            <span className="text-xs flex-shrink-0"
-              style={{ color: dark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.35)' }}>
-              {format(new Date(note.created_at), 'EEE, MMM d yyyy · h:mm a')}
-            </span>
-          )}
         </div>
 
         {/* Title + content */}
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
           <input
             value={title}
-            onChange={e => { setTitle(e.target.value); schedule(e.target.value, content, color, pinned, folder) }}
+            onChange={e => { setTitle(e.target.value); schedule(e.target.value, content, pinned, folder) }}
             placeholder="Title"
             className="w-full bg-transparent text-base font-semibold outline-none border-none"
-            style={{ color: textColor, caretColor: textColor }}
+            style={{ color: 'var(--text-primary)', caretColor: 'var(--brand)' }}
           />
           <textarea
             value={content}
-            onChange={e => { setContent(e.target.value); schedule(title, e.target.value, color, pinned, folder) }}
+            onChange={e => { setContent(e.target.value); schedule(title, e.target.value, pinned, folder) }}
             placeholder="Take a note…"
-            className="w-full bg-transparent text-sm outline-none border-none resize-none"
-            style={{
-              color: dark ? 'rgba(255,255,255,0.88)' : '#333',
-              caretColor: textColor,
-              minHeight: '220px',
-            }}
+            className="w-full bg-transparent text-sm outline-none border-none resize-none flex-1"
+            style={{ color: 'var(--text-secondary)', caretColor: 'var(--brand)', minHeight: '220px' }}
           />
         </div>
       </div>
@@ -211,34 +197,45 @@ function NoteEditor({ note, allFolders, onClose, onSave, onDelete, onFolderMove 
   )
 }
 
+// ── Main Notes page ────────────────────────────────────────────
 export default function Notes() {
   const { user } = useAppStore()
   const userId = user?.id
 
-  const [notes, setNotes]                   = useState([])
-  const [search, setSearch]                 = useState('')
-  const [activeFolder, setActiveFolder]     = useState('All')
-  const [openNote, setOpenNote]             = useState(null)
+  const [notes,           setNotes]           = useState([])
+  const [search,          setSearch]          = useState('')
+  const [activeFolder,    setActiveFolder]    = useState('All')
+  const [openNote,        setOpenNote]        = useState(null)
   const [showFolderInput, setShowFolderInput] = useState(false)
-  const [newFolderName, setNewFolderName]   = useState('')
-  const [editingFolder, setEditingFolder]   = useState(null)
-  const [editFolderName, setEditFolderName] = useState('')
-  const [customFolders, setCustomFolders]   = useState(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('ft-notes-folders') || '[]')
-      return stored.length ? stored : [...DEFAULT_FOLDERS]
-    } catch { return [...DEFAULT_FOLDERS] }
-  })
+  const [newFolderName,   setNewFolderName]   = useState('')
+  const [editingFolder,   setEditingFolder]   = useState(null)
+  const [editFolderName,  setEditFolderName]  = useState('')
+  const [customFolders,   setCustomFolders]   = useState([...DEFAULT_FOLDERS])
+  const [foldersReady,    setFoldersReady]    = useState(false)
 
   const allFolders = ['All', ...customFolders]
 
-  // ── Fetch ──────────────────────────────────────────────────────
+  // ── Load folders from Supabase user metadata ───────────────────
+  useEffect(() => {
+    if (!userId) return
+    loadFolders().then(saved => {
+      if (saved) setCustomFolders(saved)
+      setFoldersReady(true)
+    })
+  }, [userId])
+
+  // Helper: persist folder list to Supabase + localStorage backup
+  const persistFolders = useCallback(async (updated) => {
+    setCustomFolders(updated)
+    localStorage.setItem('ft-notes-folders', JSON.stringify(updated))
+    await saveFoldersRemote(updated)
+  }, [])
+
+  // ── Fetch notes ────────────────────────────────────────────────
   const fetchNotes = useCallback(async () => {
     if (!userId || !supabase) return
     const { data, error } = await supabase
-      .from('notes')
-      .select('*')
-      .eq('user_id', userId)
+      .from('notes').select('*').eq('user_id', userId)
       .order('pinned', { ascending: false })
       .order('updated_at', { ascending: false })
     if (error) { console.error('fetchNotes:', error); return }
@@ -249,9 +246,8 @@ export default function Notes() {
 
   // ── Filter ─────────────────────────────────────────────────────
   const filtered = notes.filter(n => {
-    const matchSearch =
-      n.title.toLowerCase().includes(search.toLowerCase()) ||
-      n.content.toLowerCase().includes(search.toLowerCase())
+    const matchSearch = n.title.toLowerCase().includes(search.toLowerCase()) ||
+                        n.content.toLowerCase().includes(search.toLowerCase())
     const matchFolder = activeFolder === 'All' || n.folder === activeFolder
     return matchSearch && matchFolder
   })
@@ -260,21 +256,15 @@ export default function Notes() {
 
   // ── Create ─────────────────────────────────────────────────────
   const handleCreate = async () => {
-    const uid = user?.id
-    if (!uid) return
+    if (!userId || !supabase) return
     const newNote = {
-      id: crypto.randomUUID(),
-      user_id: uid,
-      title: '',
-      content: '',
-      color: '#ffffff',
-      pinned: false,
-      folder: activeFolder || 'All',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      id: crypto.randomUUID(), user_id: userId,
+      title: '', content: '', color: null, pinned: false,
+      folder: activeFolder === 'All' ? 'All' : activeFolder,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }
     const { data, error } = await supabase.from('notes').insert(newNote).select().single()
-    if (error) { console.error('createNote error:', error); return }
+    if (error) { console.error('createNote:', error); return }
     setNotes(prev => [data, ...prev])
     setOpenNote(data)
   }
@@ -282,11 +272,7 @@ export default function Notes() {
   // ── Save ───────────────────────────────────────────────────────
   const handleSave = async (id, fields) => {
     if (!supabase) return
-    const { error } = await supabase.from('notes').update({
-      ...fields,
-      updated_at: new Date().toISOString(),
-    }).eq('id', id)
-    if (error) { console.error('updateNote:', error); return }
+    await supabase.from('notes').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', id)
     await fetchNotes()
     setOpenNote(prev => prev?.id === id ? { ...prev, ...fields } : prev)
   }
@@ -299,133 +285,98 @@ export default function Notes() {
     setOpenNote(null)
   }
 
-  // ── Add folder ─────────────────────────────────────────────────
-  const addCustomFolder = () => {
+  // ── Move note to folder (from card) ───────────────────────────
+  const handleMoveFolder = async (noteId, targetFolder) => {
+    if (!supabase) return
+    await supabase.from('notes')
+      .update({ folder: targetFolder, updated_at: new Date().toISOString() })
+      .eq('id', noteId)
+    await fetchNotes()
+  }
+
+  // ── Folder management ──────────────────────────────────────────
+  const addCustomFolder = async () => {
     const name = newFolderName.trim()
-    if (!name || allFolders.includes(name)) {
-      setShowFolderInput(false); setNewFolderName(''); return
-    }
+    if (!name || allFolders.includes(name)) { setShowFolderInput(false); setNewFolderName(''); return }
     const updated = [...customFolders, name]
-    setCustomFolders(updated)
-    localStorage.setItem('ft-notes-folders', JSON.stringify(updated))
+    await persistFolders(updated)
     setActiveFolder(name)
     setShowFolderInput(false)
     setNewFolderName('')
   }
 
-  // ── Delete folder ──────────────────────────────────────────────
   const deleteFolder = async (name) => {
-    if (!window.confirm(`Delete folder "${name}"? Notes inside will be moved to All.`)) return
+    if (!window.confirm(`Delete folder "${name}"? Notes inside will move to All.`)) return
     if (userId && supabase) {
       await supabase.from('notes')
         .update({ folder: 'All', updated_at: new Date().toISOString() })
         .eq('user_id', userId).eq('folder', name)
     }
     const updated = customFolders.filter(f => f !== name)
-    setCustomFolders(updated)
-    localStorage.setItem('ft-notes-folders', JSON.stringify(updated))
+    await persistFolders(updated)
     if (activeFolder === name) setActiveFolder('All')
     await fetchNotes()
   }
 
-  // ── Rename folder ──────────────────────────────────────────────
-  const startRenameFolder = (name) => {
-    setEditingFolder(name)
-    setEditFolderName(name)
-  }
+  const startRenameFolder = (name) => { setEditingFolder(name); setEditFolderName(name) }
 
   const commitRenameFolder = async (oldName) => {
     const newName = editFolderName.trim()
-    setEditingFolder(null)
-    setEditFolderName('')
-    if (!newName || newName === oldName) return
-    if (allFolders.includes(newName)) return
+    setEditingFolder(null); setEditFolderName('')
+    if (!newName || newName === oldName || allFolders.includes(newName)) return
     if (userId && supabase) {
       await supabase.from('notes')
         .update({ folder: newName, updated_at: new Date().toISOString() })
         .eq('user_id', userId).eq('folder', oldName)
     }
     const updated = customFolders.map(f => f === oldName ? newName : f)
-    setCustomFolders(updated)
-    localStorage.setItem('ft-notes-folders', JSON.stringify(updated))
+    await persistFolders(updated)
     if (activeFolder === oldName) setActiveFolder(newName)
     await fetchNotes()
   }
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Notes</h1>
-      </div>
+      <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Notes</h1>
 
       {/* ── Folder chips ─────────────────────────────────────────── */}
       <div className="flex items-center gap-2 flex-wrap">
-        {/* "All" chip — no edit/delete */}
         <button onClick={() => setActiveFolder('All')}
           className="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
           style={{
             background: activeFolder === 'All' ? 'var(--brand)' : 'var(--bg-overlay)',
-            color:      activeFolder === 'All' ? '#fff'         : 'var(--text-secondary)',
+            color:      activeFolder === 'All' ? '#fff' : 'var(--text-secondary)',
             border:     `1px solid ${activeFolder === 'All' ? 'transparent' : 'var(--border)'}`,
-          }}>
-          All
-        </button>
+          }}>All</button>
 
         {customFolders.map(f => {
-          const isActive = activeFolder === f
+          const isActive  = activeFolder === f
           const isEditing = editingFolder === f
 
-          if (isEditing) {
-            return (
-              <span key={f} className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium"
-                style={{ background: 'var(--bg-overlay)', border: `1px solid var(--brand)` }}>
-                <input
-                  value={editFolderName}
-                  onChange={e => setEditFolderName(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') commitRenameFolder(f)
-                    if (e.key === 'Escape') { setEditingFolder(null); setEditFolderName('') }
-                  }}
-                  autoFocus
-                  className="bg-transparent outline-none"
-                  style={{ color: 'var(--text-primary)', width: `${Math.max(60, editFolderName.length * 8)}px` }}
-                />
-                <button onClick={() => commitRenameFolder(f)} className="p-0.5" style={{ color: 'var(--brand)' }}>
-                  <Check size={12} />
-                </button>
-                <button onClick={() => { setEditingFolder(null); setEditFolderName('') }}
-                  className="p-0.5" style={{ color: 'var(--text-muted)' }}>
-                  <X size={12} />
-                </button>
-              </span>
-            )
-          }
+          if (isEditing) return (
+            <span key={f} className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium"
+              style={{ background: 'var(--bg-overlay)', border: '1px solid var(--brand)' }}>
+              <input value={editFolderName} onChange={e => setEditFolderName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') commitRenameFolder(f); if (e.key === 'Escape') { setEditingFolder(null); setEditFolderName('') } }}
+                autoFocus className="bg-transparent outline-none"
+                style={{ color: 'var(--text-primary)', width: `${Math.max(60, editFolderName.length * 8)}px` }} />
+              <button onClick={() => commitRenameFolder(f)} style={{ color: 'var(--brand)' }}><Check size={12} /></button>
+              <button onClick={() => { setEditingFolder(null); setEditFolderName('') }} style={{ color: 'var(--text-muted)' }}><X size={12} /></button>
+            </span>
+          )
 
           return (
-            <span key={f}
-              className="group flex items-center rounded-full text-xs font-medium transition-all"
-              style={{
-                background: isActive ? 'var(--brand)' : 'var(--bg-overlay)',
-                border:     `1px solid ${isActive ? 'transparent' : 'var(--border)'}`,
-              }}>
-              <button onClick={() => setActiveFolder(f)}
-                className="pl-3 pr-1.5 py-1.5"
-                style={{ color: isActive ? '#fff' : 'var(--text-secondary)' }}>
-                {f}
-              </button>
-              {/* Edit (rename) button */}
-              <button
-                onClick={e => { e.stopPropagation(); startRenameFolder(f) }}
-                title={`Rename "${f}"`}
+            <span key={f} className="group flex items-center rounded-full text-xs font-medium transition-all"
+              style={{ background: isActive ? 'var(--brand)' : 'var(--bg-overlay)', border: `1px solid ${isActive ? 'transparent' : 'var(--border)'}` }}>
+              <button onClick={() => setActiveFolder(f)} className="pl-3 pr-1.5 py-1.5"
+                style={{ color: isActive ? '#fff' : 'var(--text-secondary)' }}>{f}</button>
+              <button onClick={e => { e.stopPropagation(); startRenameFolder(f) }}
                 className="p-1 rounded transition-opacity opacity-0 group-hover:opacity-100"
                 style={{ color: isActive ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)' }}>
                 <Edit2 size={11} />
               </button>
-              {/* Delete button */}
-              <button
-                onClick={e => { e.stopPropagation(); deleteFolder(f) }}
-                title={`Delete folder "${f}"`}
-                className="pr-2 pl-0.5 py-1.5 flex items-center transition-opacity opacity-0 group-hover:opacity-100"
+              <button onClick={e => { e.stopPropagation(); deleteFolder(f) }}
+                className="pr-2 pl-0.5 py-1.5 flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
                 style={{ color: isActive ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)' }}>
                 <X size={12} />
               </button>
@@ -435,29 +386,16 @@ export default function Notes() {
 
         {showFolderInput ? (
           <div className="flex items-center gap-1">
-            <input
-              value={newFolderName}
-              onChange={e => setNewFolderName(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') addCustomFolder()
-                if (e.key === 'Escape') { setShowFolderInput(false); setNewFolderName('') }
-              }}
-              placeholder="Folder name"
-              autoFocus
+            <input value={newFolderName} onChange={e => setNewFolderName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addCustomFolder(); if (e.key === 'Escape') { setShowFolderInput(false); setNewFolderName('') } }}
+              placeholder="Folder name" autoFocus
               className="px-2 py-1 text-xs rounded-lg border outline-none"
-              style={{ background: 'var(--bg-overlay)', borderColor: 'var(--border)', color: 'var(--text-primary)', width: '110px' }}
-            />
-            <button onClick={addCustomFolder} className="p-1" style={{ color: 'var(--brand)' }}>
-              <Check size={13} />
-            </button>
-            <button onClick={() => { setShowFolderInput(false); setNewFolderName('') }}
-              className="p-1" style={{ color: 'var(--text-muted)' }}>
-              <X size={13} />
-            </button>
+              style={{ background: 'var(--bg-overlay)', borderColor: 'var(--border)', color: 'var(--text-primary)', width: '110px' }} />
+            <button onClick={addCustomFolder} className="p-1" style={{ color: 'var(--brand)' }}><Check size={13} /></button>
+            <button onClick={() => { setShowFolderInput(false); setNewFolderName('') }} className="p-1" style={{ color: 'var(--text-muted)' }}><X size={13} /></button>
           </div>
         ) : (
-          <button
-            onClick={() => setShowFolderInput(true)}
+          <button onClick={() => setShowFolderInput(true)}
             className="px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 transition-all"
             style={{ background: 'var(--bg-overlay)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
             <Plus size={11} /> Folder
@@ -469,26 +407,16 @@ export default function Notes() {
       <div className="flex items-center gap-2 px-3 py-2 rounded-xl border"
         style={{ background: 'var(--bg-overlay)', borderColor: 'var(--border)' }}>
         <Search size={15} style={{ color: 'var(--text-muted)' }} />
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search notes…"
-          className="flex-1 bg-transparent outline-none text-sm"
-          style={{ color: 'var(--text-primary)' }}
-        />
-        {search && (
-          <button onClick={() => setSearch('')} style={{ color: 'var(--text-muted)' }}>
-            <X size={14} />
-          </button>
-        )}
+        <input value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Search notes…" className="flex-1 bg-transparent outline-none text-sm"
+          style={{ color: 'var(--text-primary)' }} />
+        {search && <button onClick={() => setSearch('')} style={{ color: 'var(--text-muted)' }}><X size={14} /></button>}
       </div>
 
       {/* ── Content ──────────────────────────────────────────────── */}
       {notes.length === 0 ? (
         <div className="py-24 text-center">
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            No notes yet — tap + to create one
-          </p>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No notes yet — tap + to create one</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="py-16 text-center">
@@ -498,13 +426,14 @@ export default function Notes() {
         <div className="space-y-5 pb-24">
           {pinned.length > 0 && (
             <section>
-              <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider mb-2"
-                style={{ color: 'var(--text-muted)' }}>
+              <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
                 <Pin size={11} /> Pinned
               </div>
               <div className="columns-2 md:columns-3 gap-3">
                 {pinned.map(note => (
-                  <NoteCard key={note.id} note={note} onClick={() => setOpenNote({ ...note })} />
+                  <NoteCard key={note.id} note={note} allFolders={allFolders}
+                    onClick={() => setOpenNote({ ...note })}
+                    onMoveFolder={handleMoveFolder} />
                 ))}
               </div>
             </section>
@@ -512,14 +441,13 @@ export default function Notes() {
           {unpinned.length > 0 && (
             <section>
               {pinned.length > 0 && (
-                <div className="text-xs font-medium uppercase tracking-wider mb-2"
-                  style={{ color: 'var(--text-muted)' }}>
-                  Others
-                </div>
+                <div className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>Others</div>
               )}
               <div className="columns-2 md:columns-3 gap-3">
                 {unpinned.map(note => (
-                  <NoteCard key={note.id} note={note} onClick={() => setOpenNote({ ...note })} />
+                  <NoteCard key={note.id} note={note} allFolders={allFolders}
+                    onClick={() => setOpenNote({ ...note })}
+                    onMoveFolder={handleMoveFolder} />
                 ))}
               </div>
             </section>
@@ -528,23 +456,18 @@ export default function Notes() {
       )}
 
       {/* ── FAB ──────────────────────────────────────────────────── */}
-      <button
-        onClick={handleCreate}
+      <button onClick={handleCreate}
         className="fixed bottom-24 right-5 md:bottom-8 md:right-8 w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95 z-30"
         style={{ background: 'var(--brand)', color: '#fff' }}>
         <Plus size={24} />
       </button>
 
-      {/* ── Editor modal ─────────────────────────────────────────── */}
+      {/* ── Editor ───────────────────────────────────────────────── */}
       {openNote && (
-        <NoteEditor
-          note={openNote}
-          allFolders={allFolders}
+        <NoteEditor note={openNote} allFolders={allFolders}
           onClose={() => setOpenNote(null)}
-          onSave={handleSave}
-          onDelete={handleDelete}
-          onFolderMove={newFolder => setActiveFolder(newFolder)}
-        />
+          onSave={handleSave} onDelete={handleDelete}
+          onFolderMove={newFolder => setActiveFolder(newFolder)} />
       )}
     </div>
   )

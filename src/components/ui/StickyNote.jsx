@@ -1,60 +1,50 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { supabase } from '@/lib/supabase'
 
-const COLORS = [
-  { id: 'yellow', bg: '#FEF08A', text: '#713F12', border: '#EAB308' },
-  { id: 'blue',   bg: '#BAE6FD', text: '#0C4A6E', border: '#0EA5E9' },
-  { id: 'green',  bg: '#BBF7D0', text: '#14532D', border: '#22C55E' },
-  { id: 'pink',   bg: '#FBCFE8', text: '#831843', border: '#EC4899' },
-  { id: 'purple', bg: '#DDD6FE', text: '#4C1D95', border: '#8B5CF6' },
-  { id: 'orange', bg: '#FED7AA', text: '#7C2D12', border: '#F97316' },
-]
+export default function StickyNote({ userId }) {
+  const [note,       setNote]       = useState('')
+  const [loaded,     setLoaded]     = useState(false)
+  const saveTimer = useRef(null)
 
-const STORAGE_KEY = 'flowtrail-sticky-note'
+  // Load from Supabase user metadata on mount
+  useEffect(() => {
+    if (!userId || !supabase) return
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user?.user_metadata?.quick_note_text !== undefined) {
+        setNote(user.user_metadata.quick_note_text || '')
+      }
+      setLoaded(true)
+    })
+  }, [userId])
 
-export default function StickyNote() {
-  const [note,    setNote]    = useState(() => localStorage.getItem(STORAGE_KEY + '-text') || '')
-  const [colorId, setColorId] = useState(() => localStorage.getItem(STORAGE_KEY + '-color') || 'yellow')
-  const [showColors, setShowColors] = useState(false)
+  // Debounced save to Supabase
+  const scheduleS = (text) => {
+    if (!userId || !supabase || !loaded) return
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      supabase.auth.updateUser({ data: { quick_note_text: text } })
+    }, 800)
+  }
 
-  const color = COLORS.find(c => c.id === colorId) || COLORS[0]
+  useEffect(() => () => clearTimeout(saveTimer.current), [])
 
-  useEffect(() => { localStorage.setItem(STORAGE_KEY + '-text', note) }, [note])
-  useEffect(() => { localStorage.setItem(STORAGE_KEY + '-color', colorId) }, [colorId])
+  const handleChange = (e) => {
+    setNote(e.target.value)
+    scheduleS(e.target.value)
+  }
 
   return (
-    <div className="rounded-2xl overflow-hidden shadow-sm"
-      style={{ background: color.bg, border: `1.5px solid ${color.border}` }}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2"
-        style={{ background: color.border + '33' }}>
-        <span className="text-xs font-semibold" style={{ color: color.text }}>📌 Quick note</span>
-        <div className="relative">
-          <button onClick={() => setShowColors(v => !v)}
-            className="w-5 h-5 rounded-full border-2 shadow-sm"
-            style={{ background: color.bg, borderColor: color.border }} />
-          {showColors && (
-            <div className="absolute right-0 top-7 flex gap-1.5 p-2 rounded-xl shadow-lg z-50"
-              style={{ background: 'var(--bg-raised)', border: '1px solid var(--border)' }}>
-              {COLORS.map(c => (
-                <button key={c.id}
-                  onClick={() => { setColorId(c.id); setShowColors(false) }}
-                  className="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110"
-                  style={{ background: c.bg, borderColor: c.border,
-                    outline: colorId === c.id ? `2px solid ${c.border}` : 'none',
-                    outlineOffset: 2 }} />
-              ))}
-            </div>
-          )}
-        </div>
+    <div className="rounded-2xl overflow-hidden"
+      style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center px-3 py-2 border-b" style={{ borderColor: 'var(--border)' }}>
+        <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>📌 Quick note</span>
       </div>
-      {/* Text area */}
       <textarea
         className="w-full resize-none bg-transparent outline-none text-sm leading-relaxed px-3 py-2.5"
-        style={{ color: color.text, minHeight: 110, caretColor: color.text }}
+        style={{ color: 'var(--text-primary)', minHeight: 110, caretColor: 'var(--brand)' }}
         placeholder="Write anything here…"
         value={note}
-        onChange={e => setNote(e.target.value)}
-        onClick={() => setShowColors(false)}
+        onChange={handleChange}
       />
     </div>
   )

@@ -5,6 +5,7 @@ import { useAppStore } from '@/store/appStore'
 import { useHabits, useHabitLogs, toggleHabitLog, addHabit, updateHabit, archiveHabit } from '@/hooks/useHabits'
 import Modal from '@/components/ui/Modal'
 import MonthYearPicker from '@/components/ui/MonthYearPicker'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
@@ -255,7 +256,8 @@ function HabitCharts({ habits, logs, daysInMonth, viewDate }) {
 export default function Habits() {
   const { user } = useAppStore()
   const userId   = user?.id
-  const [showAdd, setShowAdd] = useState(false)
+  const [showAdd,         setShowAdd]         = useState(false)
+  const [pendingToggle,   setPendingToggle]   = useState(null) // { habitId, ds, label }
   const today    = new Date()
   const todayStr = format(today, 'yyyy-MM-dd')
 
@@ -426,7 +428,17 @@ export default function Habits() {
                         <div key={ds}
                           className="flex items-center justify-center flex-shrink-0 cursor-pointer"
                           style={{ width: CELL_W, height: ROW_H, touchAction: 'manipulation' }}
-                          onClick={() => toggleHabitLog(habit.id, userId, ds)}>
+                          onClick={() => {
+                            if (ds > todayStr) {
+                              setPendingToggle({
+                                habitId: habit.id,
+                                ds,
+                                label: format(new Date(ds + 'T00:00'), 'MMM d, yyyy'),
+                              })
+                            } else {
+                              toggleHabitLog(habit.id, userId, ds)
+                            }
+                          }}>
                           <div style={{
                             width:        CELL_W - 8,
                             height:       CELL_W - 8,
@@ -458,6 +470,16 @@ export default function Habits() {
       <HabitCharts habits={visibleHabits} logs={logs} daysInMonth={daysInMonth} viewDate={viewDate} />
 
       <AddHabitModal open={showAdd} onClose={() => setShowAdd(false)} userId={userId} />
+
+      <ConfirmModal
+        open={!!pendingToggle}
+        message={`You're marking ${pendingToggle?.label} before it arrives. Still mark it?`}
+        onConfirm={() => {
+          toggleHabitLog(pendingToggle.habitId, userId, pendingToggle.ds)
+          setPendingToggle(null)
+        }}
+        onCancel={() => setPendingToggle(null)}
+      />
     </div>
   )
 }

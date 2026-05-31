@@ -7,6 +7,7 @@ import Modal from '@/components/ui/Modal'
 import TimeInput from '@/components/ui/TimeInput'
 import TaskDetailModal from '@/components/ui/TaskDetailModal'
 import MonthYearPicker from '@/components/ui/MonthYearPicker'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 import { TODAY } from '@/lib/utils'
 import { format, addDays } from 'date-fns'
 
@@ -170,6 +171,7 @@ function TaskRow({ task, onSelect, onEdit, onReschedule, onDelete }) {
   const today    = TODAY()
   const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd')
   const isDone   = task.status === 'done'
+  const [pendingDone, setPendingDone] = useState(false)
 
   const dayLabel = () => {
     if (!task.due_date) return null
@@ -180,11 +182,25 @@ function TaskRow({ task, onSelect, onEdit, onReschedule, onDelete }) {
   }
   const day = dayLabel()
 
+  const dueDateLabel = task.due_date ? format(new Date(task.due_date + 'T00:00'), 'MMM d, yyyy') : ''
+
   return (
+    <>
+    <ConfirmModal
+      open={pendingDone}
+      message={`"${task.title}" is scheduled for ${dueDateLabel}. Mark it as complete now?`}
+      confirmLabel="Mark complete"
+      onConfirm={() => { toggleTask(task.id); setPendingDone(false) }}
+      onCancel={() => setPendingDone(false)}
+    />
     <div className={`flex items-start gap-3 p-3 rounded-xl transition-all group card mb-2 cursor-pointer
       ${isDone ? 'opacity-50' : ''}`}
       onClick={() => onSelect(task)}>
-      <button onClick={e => { e.stopPropagation(); toggleTask(task.id) }}
+      <button onClick={e => {
+          e.stopPropagation()
+          const isFuture = !isDone && task.due_date && task.due_date > today
+          if (isFuture) { setPendingDone(true) } else { toggleTask(task.id) }
+        }}
         className={`w-5 h-5 rounded border-2 flex-shrink-0 mt-0.5 flex items-center justify-center transition-all
           ${isDone ? 'border-[var(--green)] bg-[var(--green)]' : 'border-[var(--border-mid)] hover:border-[var(--brand)]'}`}>
         {isDone && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
@@ -211,6 +227,7 @@ function TaskRow({ task, onSelect, onEdit, onReschedule, onDelete }) {
         <button onClick={e => { e.stopPropagation(); onDelete(task) }} className="p-1.5 rounded-lg hover:bg-[var(--bg-overlay)]" style={{ color: 'var(--text-muted)' }}><Trash2 size={13}/></button>
       </div>
     </div>
+    </>
   )
 }
 

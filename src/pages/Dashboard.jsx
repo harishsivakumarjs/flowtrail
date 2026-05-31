@@ -120,7 +120,7 @@ export default function Dashboard() {
       {/* Top row: Sticky note + Tasks */}
       <div className="grid md:grid-cols-2 gap-4">
         {/* Sticky Note */}
-        <StickyNote />
+        <StickyNote userId={userId} />
 
         {/* Tasks */}
         <div className="card">

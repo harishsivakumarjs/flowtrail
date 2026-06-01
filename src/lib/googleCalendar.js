@@ -36,17 +36,34 @@ export function disconnectCalendar() {
   localStorage.removeItem('gcal_was_connected')
 }
 
-/** Try to get a fresh token silently (no popup). Resolves with token or rejects if interaction needed. */
+/**
+ * Try to get a fresh token silently (no popup).
+ * GIS callback can hang indefinitely if Google's hidden iframe fails to load,
+ * so we enforce a hard 6-second timeout and reject gracefully.
+ */
 export function silentlyReconnect() {
   return new Promise((resolve, reject) => {
     if (!CLIENT_ID) { reject(new Error('No CLIENT_ID')); return }
+
+    // Hard timeout — if GIS doesn't call our callback within 6 s, give up.
+    let settled = false
+    const timeoutId = setTimeout(() => {
+      if (!settled) { settled = true; reject(new Error('Silent reconnect timed out')) }
+    }, 6000)
+
+    const done = (fn) => (...args) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeoutId)
+      fn(...args)
+    }
 
     const run = () => {
       try {
         const client = window.google.accounts.oauth2.initTokenClient({
           client_id: CLIENT_ID,
           scope:     SCOPES,
-          callback:  (response) => {
+          callback:  done((response) => {
             if (response.error) { reject(new Error(response.error)); return }
             accessToken = response.access_token
             tokenExpiry  = Date.now() + (response.expires_in * 1000)
@@ -54,11 +71,10 @@ export function silentlyReconnect() {
             localStorage.setItem('gcal_expiry',        tokenExpiry.toString())
             localStorage.setItem('gcal_was_connected', '1')
             resolve(accessToken)
-          },
+          }),
         })
-        // prompt:'none' = no consent/account UI; fails with interaction_required if needed
         client.requestAccessToken({ prompt: 'none' })
-      } catch (e) { reject(e) }
+      } catch (e) { done(() => reject(e))() }
     }
 
     if (window.google?.accounts?.oauth2) { run(); return }
@@ -71,7 +87,7 @@ export function silentlyReconnect() {
       document.head.appendChild(script)
     }
     script.addEventListener('load', run, { once: true })
-    script.addEventListener('error', () => reject(new Error('Failed to load GIS')), { once: true })
+    script.addEventListener('error', done(() => reject(new Error('Failed to load GIS'))), { once: true })
   })
 }
 
